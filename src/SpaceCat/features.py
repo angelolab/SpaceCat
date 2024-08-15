@@ -23,6 +23,14 @@ class FeatureSpace:
         self.feature_metadata = None
 
     def exclude_empty_compartments(self, table):
+        """ Remove rows containing a compartment that does not exist in the image.
+        Args:
+            table (pd.DataFrame): contains the features calculated within each compartment
+
+        Returns:
+            pd.DataFrame:
+                table with any compartments not contained in the image excluded
+        """
         compartment_counts = table[[self.image_col, 'subset', 'value']].groupby(
             by=[self.image_col, 'subset'], observed=True).sum().reset_index()
         exclude_compartments = compartment_counts[compartment_counts.value != 0].\
@@ -33,19 +41,19 @@ class FeatureSpace:
 
     def cluster_df_helper(self, table, cluster_col_name, drop_cols, result_name, var_name,
                           cluster_stats, normalize):
-        """Function to summarize input data by cell type
-
+        """Function to summarize input data by cell type.
         Args:
             table (pd.DataFrame): table containing input data
             cluster_col_name (str): name of the column that contains the cluster information
             drop_cols (list): list of columns to drop from the table
             result_name (str): name of the statistic in the summarized information df
-            var_name (str): name of the column that will containin the computed values
+            var_name (str): name of the column that will contain the computed values
             cluster_stats (bool): whether we are calculating cluster counts and frequencies
             normalize (bool): whether to report the total or normalized counts in the result
 
         Returns:
-            pd.DataFrame: long format dataframe containing the summarized data"""
+            pd.DataFrame: long format dataframe containing the summarized data
+        """
 
         verify_in_list(cell_type_col=cluster_col_name, cell_table_columns=table.columns)
         verify_in_list(drop_cols=drop_cols, cell_table_columns=table.columns)
@@ -55,8 +63,10 @@ class FeatureSpace:
 
         # group by specified columns
         grouped_table = table_small.groupby([self.image_col, cluster_col_name], observed=True)
+
+        # specific to cell cluster dataframe
         if cluster_stats:
-            # transformed = grouped_table.agg('count')
+            # get counts or freqs
             counts = grouped_table[cluster_col_name].value_counts(normalize=normalize)
             transformed = counts.unstack(level=cluster_col_name, fill_value=0).stack()
             transformed = transformed.reset_index()
@@ -67,6 +77,7 @@ class FeatureSpace:
             else:
                 transformed = grouped_table.agg('sum')
             transformed.reset_index(inplace=True)
+            # reshape to long df
             long_df = pd.melt(
                 transformed, id_vars=[self.image_col, cluster_col_name], var_name=var_name)
             long_df = long_df.rename(columns={cluster_col_name: 'cell_type'})
@@ -78,19 +89,23 @@ class FeatureSpace:
     def create_long_df(self, table, cluster_col_name, result_name, var_name, subset_col=None,
                        cluster_stats=False, normalize=False, drop_cols=[],
                        exclude_missing_compartments=True):
-        """Summarize functional marker positivity by cell type, with the option to subset by an additional feature
-
+        """Summarize input data by cell type, with the option to subset by an additional feature.
         Args:
             table (pd.DataFrame): the dataframe containing information on each cell
-            cluster_col_name (str): the column name in cell_table that contains the cluster information
-            drop_cols (list): list of columns to drop from cell_table
+            cluster_col_name (str): the column name in cell_table that contains the cluster info
             result_name (str): the name of this statistic in the returned df
-            var_name (str): name of the column that will containin the computed values
+            var_name (str): name of the column that will contain the computed values
             subset_col (str): the column name in cell_table to subset by
+            cluster_stats (bool): whether we are calculating cluster counts and frequencies
             normalize (bool): whether to report the total or normalized counts in the result
+            drop_cols (list): list of columns to drop from cell_table
+            exclude_missing_compartments (bool): whether to exclude a compartment when it's not
+                contained in the image, or to included as 0 value
 
         Returns:
-            pd.DataFrame: long format dataframe containing the summarized data"""
+            pd.DataFrame:
+                long format dataframe containing the summarized data
+        """
 
         # first generate df without subsetting
         drop_cols_all = drop_cols.copy()
@@ -112,8 +127,9 @@ class FeatureSpace:
             grouped_table = table_small.groupby(
                 [self.image_col, subset_col, cluster_col_name], observed=True)
 
+            ## TO DO: make the code below a helper function ??
+            # specific to cell cluster dataframe
             if cluster_stats:
-                # transformed = grouped_table.agg('count')
                 counts_vals = grouped_table[cluster_col_name].value_counts(normalize=normalize)
                 transformed = counts_vals.unstack(level=cluster_col_name, fill_value=0).stack()
                 transformed = transformed.reset_index()
@@ -144,6 +160,20 @@ class FeatureSpace:
 
     def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, comparmtent_area_df,
                                exclude_missing_compartments=True):
+        """ Create dataframe containing cell counts and frequency statistics.
+        Args:
+            cell_table_clusters (pd.DataFrame): the dataframe containing cell classifications
+            cluster_df_params (list): list of which features to generate
+            comparmtent_area_df (pd.DataFrame): the dataframe containing the areas of each
+                compartment
+            exclude_missing_compartments (bool): whether to exclude a compartment when it's not
+                contained in the image, or to included as 0 value, defaults to True
+
+        Returns:
+            pd.DataFrame:
+                contains density and frequencies of each cell type in the entire image as well as
+                the individual compartments, as well as stats across all cell types in the image
+        """
         cluster_dfs = []
         for result_name, cluster_col_name, normalize in cluster_df_params:
             drop_cols = []
@@ -228,6 +258,18 @@ class FeatureSpace:
         return total_df_clusters
 
     def format_helper(self, compartment_df, compartment, cell_pop_level, feature_type):
+        """ Add informative metadata columns to the feature dataframe.
+        Args:
+            compartment_df (pd.DataFrame): table with features for the specified compartment
+            compartment (str): which compartment is being subsetted
+            cell_pop_level (str): level of cell clustering for the feature
+            feature_type (str): broad name of the feature type
+
+        Returns:
+            pd.DataFrame:
+                table with feature metadata columns included
+        """
+        # add useful metadata about the feature
         if compartment == 'all':
             compartment_df['feature_name_unique'] = compartment_df['feature_name']
         else:
@@ -244,14 +286,23 @@ class FeatureSpace:
 
         return compartment_df
 
-    def generate_high_level_stats(self, stats_df, abundance_params, ratio_params,
+    def generate_high_level_stats(self, stats_df, density_params, ratio_params,
                                   minimum_density=0.0005):
-
+        """ Create feature dataframes for cell abundance.
+        Args:
+            stats_df (pd.DataFrame): table created by generate_cluster_stats() containing density
+                stats for each cell type
+            density_params (list): list of which density features to generate
+            ratio_params (list): list of which ratio features to generate
+            minimum_density (float): minimum cell density required to generate the feature
+        Returns:
+            saves the abundance feature dataframes to the class
+        """
         # add total density stats to list
-        abundance_params.append(['total_cell_density', 'total_density', 'total'])
+        density_params.append(['total_cell_density', 'total_density', 'total'])
 
         # compute abundance of cell types
-        for cluster_name, feature_name, cell_pop_level in abundance_params:
+        for cluster_name, feature_name, cell_pop_level in density_params:
             input_df = stats_df[stats_df['metric'].isin([cluster_name])]
             for compartment in self.compartment_list:
                 compartment_df = input_df[input_df.subset == compartment].copy()
@@ -289,17 +340,22 @@ class FeatureSpace:
                     cell_type1_df, compartment, cell_pop_level, feature_type='density_ratio')
                 self.feature_data_list.append(cell_type1_df_formatted)
 
-    def remove_correlated_features(self, feature_df, correlation_thresh):
+    def remove_correlated_features(self, correlation_thresh, image_prop=0.1):
+        """  A function to filter out features that are highly correlated in compartments.
+        Args:
+            correlation_thresh (float): the max correlation value the features can have to be
+                included the feature table, any features with correlation above it will be excluded
+            image_prop (float): minimum proportion of images for compartment feature to include
+        Returns:
+            pd.DataFrame
+                table with highly correlated features removed
+        """
         # filter FOV features based on correlation in compartments
         feature_df = self.combined_feature_data
 
         # filter out features that are highly correlated in compartments
         feature_names = feature_df.feature_name.unique()
         exclude_list = []
-
-        ## ADJUST THIS
-        # set minimum number of FOVs for compartment feature
-        min_fovs = 100
 
         for feature_name in feature_names:
             fov_data_feature = feature_df.loc[feature_df.feature_name == feature_name, :]
@@ -319,7 +375,7 @@ class FeatureSpace:
                 nan_count = fov_data_wide[compartment].isna().sum()
                 zero_count = (fov_data_wide[compartment] == 0).sum()
 
-                if len(fov_data_wide) - nan_count - zero_count < min_fovs:
+                if (len(fov_data_wide) - nan_count - zero_count) / len(fov_data_wide) < image_prop:
                     exclude_list.append(feature_name + '__' + compartment)
                     fov_data_wide = fov_data_wide.drop(columns=compartment)
 
@@ -343,6 +399,14 @@ class FeatureSpace:
         return feature_df_filtered
 
     def combine_features(self, correlation_filtering=0.7):
+        """ Combines the previously generated feature tables into a single dataframe.
+        Args:
+            correlation_filtering (float): threshold for correlation excluding, defaults to 0.7
+                but can be set to None to avoid generating a filtered table
+        Returns:
+            generates and saves combined_feature_data, combined_feature_data_filtered,
+            feature_metadata, and excluded_features tables to the class
+        """
         # compute z-scores for each feature
         feature_df = pd.concat(self.feature_data_list).reset_index(drop=True)
         feature_df = feature_df.rename(columns={'value': 'raw_value'})
@@ -371,8 +435,7 @@ class FeatureSpace:
                                        'cell_pop_level', 'feature_type']]
 
         if correlation_filtering:
-            feature_df_filtered = self.remove_correlated_features(
-                feature_df, correlation_filtering)
+            feature_df_filtered = self.remove_correlated_features(correlation_filtering)
             self.combined_feature_data_filtered = feature_df_filtered
             self.adata_table.uns['combined_feature_data_filtered'] = feature_df
 
@@ -386,6 +449,11 @@ class FeatureSpace:
         self.adata_table.uns['feature_metadata'] = feature_metadata
 
     def run_spacecat(self):
+        """ Main function to calculate all cell stats and generate the final feature table.
+        Returns:
+             anndata:
+                the anndata table with all intermediate and final tables appended
+        """
         # Generate counts and proportions of cell clusters per FOV
         cluster_params = []
         for column in self.cluster_columns:
@@ -401,16 +469,16 @@ class FeatureSpace:
         output = self.generate_cluster_stats(
             cell_table_clusters, cluster_params, compartment_area_df)
 
-        # high level cluster stats
+        # generate abundance features
         stats_df = self.adata_table.uns['cluster_stats']
-        abundance_params = []
+        density_params = []
         for column in self.cluster_columns:
-            abundance_params.append([column + '_density', column + '_density', column])
+            density_params.append([column + '_density', column + '_density', column])
 
         # TO DO: generalize this
         ratio_params = ['cell_cluster_broad_density', 'cell_cluster_broad']
 
-        self.generate_high_level_stats(stats_df, abundance_params, ratio_params)
+        self.generate_high_level_stats(stats_df, density_params, ratio_params)
         self.combine_features()
 
         return self.adata_table
