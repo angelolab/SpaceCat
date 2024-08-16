@@ -31,25 +31,28 @@ class FeatureSpace:
             pd.DataFrame:
                 table with any compartments not contained in the image excluded
         """
+        # calculate which compartment have zero values for every cell type
         compartment_counts = table[[self.image_col, 'subset', 'value']].groupby(
             by=[self.image_col, 'subset'], observed=True).sum().reset_index()
-        exclude_compartments = compartment_counts[compartment_counts.value != 0].\
+        include_compartments = compartment_counts[compartment_counts.value != 0].\
             drop(columns=['value'])
-        table = pd.merge(table, exclude_compartments, how='inner')
+
+        # drop regions that do not exist in the image from the feature table
+        table = pd.merge(table, include_compartments, how='inner')
 
         return table
 
-    def cluster_df_helper(self, table, cluster_col_name, drop_cols, result_name, var_name,
-                          cluster_stats, normalize):
+    def cluster_df_helper(self, table, cluster_col_name, drop_cols, var_name,
+                          cluster_stats, normalize, subset_col=None):
         """Function to summarize input data by cell type.
         Args:
             table (pd.DataFrame): table containing input data
             cluster_col_name (str): name of the column that contains the cluster information
             drop_cols (list): list of columns to drop from the table
-            result_name (str): name of the statistic in the summarized information df
             var_name (str): name of the column that will contain the computed values
             cluster_stats (bool): whether we are calculating cluster counts and frequencies
             normalize (bool): whether to report the total or normalized counts in the result
+            subset_col (str): name of the image subset column, defaults to None
 
         Returns:
             pd.DataFrame: long format dataframe containing the summarized data
@@ -57,38 +60,50 @@ class FeatureSpace:
 
         verify_in_list(cell_type_col=cluster_col_name, cell_table_columns=table.columns)
         verify_in_list(drop_cols=drop_cols, cell_table_columns=table.columns)
+        if subset_col:
+            verify_in_list(subset_col=subset_col, cell_table_columns=table.columns)
 
         # drop columns from table
         table_small = table.loc[:, ~table.columns.isin(drop_cols)]
 
-        # group by specified columns
-        grouped_table = table_small.groupby([self.image_col, cluster_col_name], observed=True)
-
         # specific to cell cluster dataframe
         if cluster_stats:
+            # group by specified columns
+            groupby_cols = [self.image_col, subset_col] if subset_col else [self.image_col]
+            grouped_table = table_small.groupby(groupby_cols, observed=True)
+
             # get counts or freqs
             counts = grouped_table[cluster_col_name].value_counts(normalize=normalize)
             transformed = counts.unstack(level=cluster_col_name, fill_value=0).stack()
             transformed = transformed.reset_index()
+
+            # reshape to long df
             long_df = transformed.rename(columns={cluster_col_name: 'cell_type', 0: 'value'})
         else:
+            # group by specified columns
+            groupby_cols = [self.image_col, cluster_col_name, subset_col] if subset_col else\
+                [self.image_col, cluster_col_name]
+            grouped_table = table_small.groupby(groupby_cols, observed=True)
+
             if normalize:
                 transformed = grouped_table.agg('mean')
             else:
                 transformed = grouped_table.agg('sum')
             transformed.reset_index(inplace=True)
+
             # reshape to long df
             long_df = pd.melt(
                 transformed, id_vars=[self.image_col, cluster_col_name], var_name=var_name)
             long_df = long_df.rename(columns={cluster_col_name: 'cell_type'})
 
-        long_df['metric'] = result_name
+        if subset_col:
+            long_df = long_df.rename(columns={subset_col: 'subset', self.label_col: 'value'})
 
         return long_df
 
     def create_long_df(self, table, cluster_col_name, result_name, var_name, subset_col=None,
                        cluster_stats=False, normalize=False, drop_cols=[],
-                       exclude_missing_compartments=True):
+                       exclude_missing_compartments=False):
         """Summarize input data by cell type, with the option to subset by an additional feature.
         Args:
             table (pd.DataFrame): the dataframe containing information on each cell
@@ -112,45 +127,15 @@ class FeatureSpace:
         if subset_col is not None:
             drop_cols_all = drop_cols_all + [subset_col]
 
-        long_df_all = self.cluster_df_helper(table, cluster_col_name, drop_cols_all, result_name,
+        long_df_all = self.cluster_df_helper(table, cluster_col_name, drop_cols_all,
                                              var_name, cluster_stats, normalize)
+        long_df_all['metric'] = result_name
         long_df_all['subset'] = 'all'
 
         # if a subset column is specified, create df stratified by subset
         if subset_col is not None:
-            verify_in_list(subset_col=subset_col, cell_table_columns=table.columns)
-
-            # drop columns from table
-            table_small = table.loc[:, ~table.columns.isin(drop_cols)]
-
-            # group by specified columns
-            grouped_table = table_small.groupby(
-                [self.image_col, subset_col, cluster_col_name], observed=True)
-
-            ## TO DO: make the code below a helper function ??
-            # specific to cell cluster dataframe
-            if cluster_stats:
-                counts_vals = grouped_table[cluster_col_name].value_counts(normalize=normalize)
-                transformed = counts_vals.unstack(level=cluster_col_name, fill_value=0).stack()
-                transformed = transformed.reset_index()
-                long_df = transformed.rename(
-                    columns={cluster_col_name: 'cell_type', 0: 'value', subset_col: 'subset'})
-            else:
-                if normalize:
-                    transformed = grouped_table.agg('mean')
-                else:
-                    transformed = grouped_table.agg('sum')
-                transformed.reset_index(inplace=True)
-                # reshape to long df
-                long_df = pd.melt(
-                    transformed, id_vars=[self.image_col, subset_col, cluster_col_name],
-                    var_name=var_name)
-                long_df = long_df.rename(columns={cluster_col_name: 'cell_type',
-                                                  self.label_col: 'value', subset_col: 'subset'})
-
-            if cluster_stats:
-                if exclude_missing_compartments:
-                    long_df = self.exclude_empty_compartments(long_df)
+            long_df = self.cluster_df_helper(table, cluster_col_name, drop_cols, var_name,
+                                             cluster_stats, normalize, subset_col=subset_col)
 
             # combine the two dataframes
             long_df['metric'] = result_name
@@ -158,21 +143,20 @@ class FeatureSpace:
 
         return long_df_all
 
-    def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, comparmtent_area_df,
+    def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, compartment_area_df,
                                exclude_missing_compartments=True):
         """ Create dataframe containing cell counts and frequency statistics.
         Args:
             cell_table_clusters (pd.DataFrame): the dataframe containing cell classifications
             cluster_df_params (list): list of which features to generate
-            comparmtent_area_df (pd.DataFrame): the dataframe containing the areas of each
+            compartment_area_df (pd.DataFrame): the dataframe containing the areas of each
                 compartment
             exclude_missing_compartments (bool): whether to exclude a compartment when it's not
                 contained in the image, or to included as 0 value, defaults to True
 
         Returns:
-            pd.DataFrame:
-                contains density and frequencies of each cell type in the entire image as well as
-                the individual compartments, as well as stats across all cell types in the image
+            saves the cluster_stats to the class which contains density and freqs of each cell type
+            in the compartments/ whole image, as well as stats across all cell types in the image
         """
         cluster_dfs = []
         for result_name, cluster_col_name, normalize in cluster_df_params:
@@ -210,8 +194,6 @@ class FeatureSpace:
         grouped_cell_counts_region['metric'] = 'total_cell_count'
         grouped_cell_counts_region.rename(columns={self.compartment_col: 'subset'}, inplace=True)
         grouped_cell_counts_region['cell_type'] = 'all'
-        if exclude_missing_compartments:
-            grouped_cell_counts_region = self.exclude_empty_compartments(grouped_cell_counts_region)
 
         # calculate proportions of cells per region per image
         grouped_cell_freq_region = cell_table_clusters[[self.image_col, self.compartment_col]].\
@@ -224,8 +206,6 @@ class FeatureSpace:
         grouped_cell_freq_region['metric'] = 'total_cell_freq'
         grouped_cell_freq_region.rename(columns={self.compartment_col: 'subset'}, inplace=True)
         grouped_cell_freq_region['cell_type'] = 'all'
-        if exclude_missing_compartments:
-            grouped_cell_freq_region = self.exclude_empty_compartments(grouped_cell_freq_region)
 
         # add manually defined dfs to overall list
         cluster_dfs.extend([grouped_cell_counts,
@@ -240,11 +220,11 @@ class FeatureSpace:
         count_metrics = [x for x in count_metrics if 'count' in x]
 
         count_df = total_df_clusters.loc[total_df_clusters.metric.isin(count_metrics), :]
-        comparmtent_area_df = comparmtent_area_df.rename(columns={self.compartment_col: 'subset'})
-        all_area = comparmtent_area_df[[self.image_col, self.compartment_col + '_area']].groupby(
+        compartment_area_df = compartment_area_df.rename(columns={self.compartment_col: 'subset'})
+        all_area = compartment_area_df[[self.image_col, self.compartment_col + '_area']].groupby(
             by=[self.image_col]).sum().reset_index()
         all_area['subset'] = 'all'
-        area_df = pd.concat([comparmtent_area_df, all_area])
+        area_df = pd.concat([compartment_area_df, all_area])
         count_df = count_df.merge(area_df, on=[self.image_col, 'subset'], how='left')
         count_df['value'] = count_df['value'] / count_df[self.compartment_col + '_area']
         count_df['value'] = count_df['value'] * 1000
@@ -254,8 +234,10 @@ class FeatureSpace:
         count_df = count_df.drop(columns=[self.compartment_col + '_area'])
         total_df_clusters = pd.concat([total_df_clusters, count_df], axis=0)
 
+        if exclude_missing_compartments:
+            total_df_clusters = self.exclude_empty_compartments(total_df_clusters)
+
         self.adata_table.uns['cluster_stats'] = total_df_clusters
-        return total_df_clusters
 
     def format_helper(self, compartment_df, compartment, cell_pop_level, feature_type):
         """ Add informative metadata columns to the feature dataframe.
@@ -282,7 +264,6 @@ class FeatureSpace:
         compartment_df = compartment_df[
             [self.image_col, 'value', 'feature_name', 'feature_name_unique', self.compartment_col,
              'cell_pop_level', 'feature_type']]
-        ## TO DO: add in cell_pop ??
 
         return compartment_df
 
@@ -382,7 +363,6 @@ class FeatureSpace:
             # compute correlations
             compartments = fov_data_wide.columns
             compartments = compartments[compartments != 'all']
-
             for compartment in compartments:
                 corr, _ = spearmanr(fov_data_wide['all'].values, fov_data_wide[compartment].values,
                                     nan_policy='omit')
@@ -426,24 +406,21 @@ class FeatureSpace:
                                  'feature_name_unique', self.compartment_col, 'cell_pop_level',
                                  'feature_type']]
 
-        ## TO DO ##
-        # add metadata
-
+        # save full feature df
         self.combined_feature_data = feature_df
         self.adata_table.uns['combined_feature_data'] = feature_df
-        feature_metadata = feature_df[['feature_name', 'feature_name_unique', self.compartment_col,
-                                       'cell_pop_level', 'feature_type']]
 
         if correlation_filtering:
+            # save filtered feature df
             feature_df_filtered = self.remove_correlated_features(correlation_filtering)
             self.combined_feature_data_filtered = feature_df_filtered
             self.adata_table.uns['combined_feature_data_filtered'] = feature_df
 
-            feature_metadata = feature_df_filtered[['feature_name', 'feature_name_unique',
-                                                    self.compartment_col, 'cell_pop_level',
-                                                    'feature_type']]
+            feature_df = feature_df_filtered
 
         # save feature metadata
+        feature_metadata = feature_df[['feature_name', 'feature_name_unique', self.compartment_col,
+                                       'cell_pop_level', 'feature_type']]
         feature_metadata = feature_metadata.drop_duplicates()
         self.feature_metadata = feature_metadata
         self.adata_table.uns['feature_metadata'] = feature_metadata
@@ -466,7 +443,7 @@ class FeatureSpace:
         compartment_area_df = self.adata_table.obs[
             [self.image_col, self.compartment_col, self.compartment_col + '_area']].\
             drop_duplicates()
-        output = self.generate_cluster_stats(
+        self.generate_cluster_stats(
             cell_table_clusters, cluster_params, compartment_area_df)
 
         # generate abundance features
@@ -475,10 +452,18 @@ class FeatureSpace:
         for column in self.cluster_columns:
             density_params.append([column + '_density', column + '_density', column])
 
-        # TO DO: generalize this
-        ratio_params = ['cell_cluster_broad_density', 'cell_cluster_broad']
+        # determine broadest cluster column (least number of unique cell classifications)
+        broadest_cluster_col = self.cluster_columns[0]
+        for col in self.cluster_columns:
+            if len(np.unique(cell_table_clusters[col])) < \
+                    len(np.unique(cell_table_clusters[broadest_cluster_col])):
+                broadest_cluster_col = col
+        ratio_params = [f'{broadest_cluster_col}_density', broadest_cluster_col]
 
+        # generate abundance features
         self.generate_high_level_stats(stats_df, density_params, ratio_params)
+
+        # combine into full feature df
         self.combine_features()
 
         return self.adata_table
