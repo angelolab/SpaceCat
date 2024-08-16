@@ -42,8 +42,8 @@ class SpaceCat:
 
         return table
 
-    def cluster_df_helper(self, table, cluster_col_name, drop_cols, var_name,
-                          cluster_stats, normalize, subset_col=None):
+    def long_df_helper(self, table, cluster_col_name, drop_cols, var_name, cluster_stats,
+                       normalize, subset_col=None):
         """Function to summarize input data by cell type.
         Args:
             table (pd.DataFrame): table containing input data
@@ -127,15 +127,15 @@ class SpaceCat:
         if subset_col is not None:
             drop_cols_all = drop_cols_all + [subset_col]
 
-        long_df_all = self.cluster_df_helper(table, cluster_col_name, drop_cols_all,
-                                             var_name, cluster_stats, normalize)
+        long_df_all = self.long_df_helper(table, cluster_col_name, drop_cols_all, var_name,
+                                          cluster_stats, normalize)
         long_df_all['metric'] = result_name
         long_df_all['subset'] = 'all'
 
         # if a subset column is specified, create df stratified by subset
         if subset_col is not None:
-            long_df = self.cluster_df_helper(table, cluster_col_name, drop_cols, var_name,
-                                             cluster_stats, normalize, subset_col=subset_col)
+            long_df = self.long_df_helper(table, cluster_col_name, drop_cols, var_name,
+                                          cluster_stats, normalize, subset_col=subset_col)
 
             # combine the two dataframes
             long_df['metric'] = result_name
@@ -267,8 +267,8 @@ class SpaceCat:
 
         return compartment_df
 
-    def generate_high_level_stats(self, stats_df, density_params, ratio_params,
-                                  minimum_density=0.0005):
+    def generate_abundance_features(self, stats_df, density_params, ratio_params,
+                                    minimum_density=0.0005):
         """ Create feature dataframes for cell abundance.
         Args:
             stats_df (pd.DataFrame): table created by generate_cluster_stats() containing density
@@ -460,8 +460,9 @@ class SpaceCat:
                 broadest_cluster_col = col
         ratio_params = [f'{broadest_cluster_col}_density', broadest_cluster_col]
 
-        # generate abundance features
-        self.generate_high_level_stats(stats_df, density_params, ratio_params)
+        # generate features
+        self.generate_abundance_features(stats_df, density_params, ratio_params)
+        # TO DO: add functional features, mophology features, etc.
 
         # combine into full feature df
         self.combine_features()
