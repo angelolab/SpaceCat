@@ -6,7 +6,7 @@ from scipy.stats import spearmanr
 from alpineer.misc_utils import verify_in_list
 
 
-class FeatureSpace:
+class SpaceCat:
 
     def __init__(self, adata_table, image_col, label_col, cluster_columns, compartment_col):
         self.adata_table = adata_table.copy()
