@@ -93,7 +93,7 @@ class SpaceCat:
 
             # reshape to long df
             long_df = pd.melt(
-                transformed, id_vars=[self.image_col, cluster_col_name], var_name=var_name)
+                transformed, id_vars=groupby_cols, var_name=var_name)
             long_df = long_df.rename(columns={cluster_col_name: 'cell_type'})
 
         if subset_col:
@@ -372,6 +372,7 @@ class SpaceCat:
         # remove features from dataframe
         exclude_df = pd.DataFrame({'feature_name_unique': exclude_list})
         self.excluded_features = exclude_df
+        self.adata_table.uns['excluded_features'] = exclude_df
         feature_df_filtered = \
             feature_df.loc[~feature_df.feature_name_unique.isin(
                 exclude_df.feature_name_unique.values), :]
