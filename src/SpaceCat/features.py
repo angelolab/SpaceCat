@@ -42,6 +42,39 @@ class SpaceCat:
 
         return table
 
+    def calculate_density_stats(self, total_df_clusters, compartment_area_df):
+        """Function to calculate density statistics based on cell counts and compartment area
+        Args:
+            total_df_clusters (pd.DataFrame): table containing cluster stats
+            compartment_area_df (pd.DataFrame): the dataframe containing the areas
+
+        Returns:
+            pd.DataFrame:
+                table with the frequencies of each cell type in the compartments / image
+        """
+
+        # retrieve counts values
+        count_metrics = total_df_clusters.metric.unique()
+        count_metrics = [x for x in count_metrics if 'count' in x]
+        count_df = total_df_clusters.loc[total_df_clusters.metric.isin(count_metrics), :]
+
+        # calculate total image area and append to area df
+        compartment_area_df = compartment_area_df.rename(columns={self.compartment_col: 'subset'})
+        all_area = compartment_area_df[[self.image_col, self.compartment_col + '_area']].groupby(
+            by=[self.image_col]).sum().reset_index()
+        all_area['subset'] = 'all'
+        area_df = pd.concat([compartment_area_df, all_area])
+
+        # calculate density stats
+        density_df = count_df.merge(area_df, on=[self.image_col, 'subset'], how='left')
+        density_df['value'] = density_df['value'] / density_df[self.compartment_col + '_area']*1000
+
+        # rename metric from count to density
+        density_df['metric'] = density_df['metric'].str.replace('count', 'density')
+        density_df = density_df.drop(columns=[self.compartment_col + '_area'])
+
+        return density_df
+
     def long_df_helper(self, table, cluster_col_name, drop_cols, var_name, cluster_stats,
                        normalize, subset_col=None):
         """Function to summarize input data by cell type.
@@ -55,7 +88,8 @@ class SpaceCat:
             subset_col (str): name of the image subset column, defaults to None
 
         Returns:
-            pd.DataFrame: long format dataframe containing the summarized data
+            pd.DataFrame:
+                long format dataframe containing the summarized data
         """
 
         verify_in_list(cell_type_col=cluster_col_name, cell_table_columns=table.columns)
@@ -64,7 +98,7 @@ class SpaceCat:
             verify_in_list(subset_col=subset_col, cell_table_columns=table.columns)
 
         # drop columns from table
-        table_small = table.loc[:, ~table.columns.isin(drop_cols)]
+        table_small = table.drop(columns=drop_cols, errors="ignore")
 
         # specific to cell cluster dataframe
         if cluster_stats:
@@ -85,15 +119,11 @@ class SpaceCat:
                 [self.image_col, cluster_col_name]
             grouped_table = table_small.groupby(groupby_cols, observed=True)
 
-            if normalize:
-                transformed = grouped_table.agg('mean')
-            else:
-                transformed = grouped_table.agg('sum')
+            transformed = grouped_table.agg('mean') if normalize else grouped_table.agg('sum')
             transformed.reset_index(inplace=True)
 
             # reshape to long df
-            long_df = pd.melt(
-                transformed, id_vars=groupby_cols, var_name=var_name)
+            long_df = pd.melt(transformed, id_vars=groupby_cols, var_name=var_name)
             long_df = long_df.rename(columns={cluster_col_name: 'cell_type'})
 
         if subset_col:
@@ -102,8 +132,7 @@ class SpaceCat:
         return long_df
 
     def create_long_df(self, table, cluster_col_name, result_name, var_name, subset_col=None,
-                       cluster_stats=False, normalize=False, drop_cols=[],
-                       exclude_missing_compartments=False):
+                       cluster_stats=False, normalize=False, drop_cols=None):
         """Summarize input data by cell type, with the option to subset by an additional feature.
         Args:
             table (pd.DataFrame): the dataframe containing information on each cell
@@ -114,19 +143,16 @@ class SpaceCat:
             cluster_stats (bool): whether we are calculating cluster counts and frequencies
             normalize (bool): whether to report the total or normalized counts in the result
             drop_cols (list): list of columns to drop from cell_table
-            exclude_missing_compartments (bool): whether to exclude a compartment when it's not
-                contained in the image, or to included as 0 value
 
         Returns:
             pd.DataFrame:
                 long format dataframe containing the summarized data
         """
+        # change none to empty list
+        drop_cols = [] if not drop_cols else drop_cols
 
         # first generate df without subsetting
-        drop_cols_all = drop_cols.copy()
-        if subset_col is not None:
-            drop_cols_all = drop_cols_all + [subset_col]
-
+        drop_cols_all = drop_cols + [subset_col] if subset_col is not None else drop_cols.copy()
         long_df_all = self.long_df_helper(table, cluster_col_name, drop_cols_all, var_name,
                                           cluster_stats, normalize)
         long_df_all['metric'] = result_name
@@ -155,8 +181,8 @@ class SpaceCat:
                 contained in the image, or to included as 0 value, defaults to True
 
         Returns:
-            saves the cluster_stats to the class which contains density and freqs of each cell type
-            in the compartments/ whole image, as well as stats across all cell types in the image
+            saves the cluster_stats to the class which contains counts, freqs, & densities of each
+            cell type in the compartments/image, as well as stats across all cell types
         """
         cluster_dfs = []
         for result_name, cluster_col_name, normalize in cluster_df_params:
@@ -175,67 +201,50 @@ class SpaceCat:
                                                    normalize=normalize,
                                                    drop_cols=drop_cols))
 
+        def add_metadata(panda_series, metric, compartment_col=False):
+            df = pd.DataFrame(panda_series)
+            df.columns = ['value']
+            df.reset_index(inplace=True)
+            df['metric'] = metric
+            df['cell_type'] = 'all'
+            if compartment_col:
+                df.rename(columns={self.compartment_col: 'subset'}, inplace=True)
+            else:
+                df['subset'] = 'all'
+
+            return df
+
         # calculate total number of cells per image
         grouped_cell_counts = cell_table_clusters[[self.image_col]].groupby(
             self.image_col, observed=True).value_counts()
-        grouped_cell_counts = pd.DataFrame(grouped_cell_counts)
-        grouped_cell_counts.columns = ['value']
-        grouped_cell_counts.reset_index(inplace=True)
-        grouped_cell_counts['metric'] = 'total_cell_count'
-        grouped_cell_counts['cell_type'] = 'all'
-        grouped_cell_counts['subset'] = 'all'
+        grouped_cell_counts = add_metadata(grouped_cell_counts, metric='total_cell_count')
 
         # calculate total number of cells per region per image
         grouped_cell_counts_region = cell_table_clusters[[self.image_col, self.compartment_col]].\
             groupby([self.image_col, self.compartment_col], observed=True).value_counts()
-        grouped_cell_counts_region = pd.DataFrame(grouped_cell_counts_region)
-        grouped_cell_counts_region.columns = ['value']
-        grouped_cell_counts_region.reset_index(inplace=True)
-        grouped_cell_counts_region['metric'] = 'total_cell_count'
-        grouped_cell_counts_region.rename(columns={self.compartment_col: 'subset'}, inplace=True)
-        grouped_cell_counts_region['cell_type'] = 'all'
+        grouped_cell_counts_region = add_metadata(
+            grouped_cell_counts_region, metric='total_cell_count', compartment_col=True)
 
         # calculate proportions of cells per region per image
         grouped_cell_freq_region = cell_table_clusters[[self.image_col, self.compartment_col]].\
-            groupby([self.image_col], observed=True)
-        grouped_cell_freq_region = grouped_cell_freq_region[self.compartment_col].\
+            groupby([self.image_col], observed=True)[self.compartment_col].\
             value_counts(normalize=True)
-        grouped_cell_freq_region = pd.DataFrame(grouped_cell_freq_region)
-        grouped_cell_freq_region.columns = ['value']
-        grouped_cell_freq_region.reset_index(inplace=True)
-        grouped_cell_freq_region['metric'] = 'total_cell_freq'
-        grouped_cell_freq_region.rename(columns={self.compartment_col: 'subset'}, inplace=True)
-        grouped_cell_freq_region['cell_type'] = 'all'
+        grouped_cell_freq_region = add_metadata(
+            grouped_cell_freq_region, metric='total_cell_freq', compartment_col=True)
 
-        # add manually defined dfs to overall list
-        cluster_dfs.extend([grouped_cell_counts,
-                            grouped_cell_counts_region,
-                            grouped_cell_freq_region])
-
-        # create single df with appropriate metadata
+        # add manually defined dfs to overall df
+        cluster_dfs.extend(
+            [grouped_cell_counts, grouped_cell_counts_region, grouped_cell_freq_region])
         total_df_clusters = pd.concat(cluster_dfs, axis=0)
 
-        # compute density of cells for counts-based metrics
-        count_metrics = total_df_clusters.metric.unique()
-        count_metrics = [x for x in count_metrics if 'count' in x]
+        # compute density of cells for counts-based metrics and add to overall df
+        density_df = self.calculate_density_stats(total_df_clusters, compartment_area_df)
+        total_df_clusters = pd.concat([total_df_clusters, density_df], axis=0)
 
-        count_df = total_df_clusters.loc[total_df_clusters.metric.isin(count_metrics), :]
-        compartment_area_df = compartment_area_df.rename(columns={self.compartment_col: 'subset'})
-        all_area = compartment_area_df[[self.image_col, self.compartment_col + '_area']].groupby(
-            by=[self.image_col]).sum().reset_index()
-        all_area['subset'] = 'all'
-        area_df = pd.concat([compartment_area_df, all_area])
-        count_df = count_df.merge(area_df, on=[self.image_col, 'subset'], how='left')
-        count_df['value'] = count_df['value'] / count_df[self.compartment_col + '_area']
-        count_df['value'] = count_df['value'] * 1000
-
-        # rename metric from count to density
-        count_df['metric'] = count_df['metric'].str.replace('count', 'density')
-        count_df = count_df.drop(columns=[self.compartment_col + '_area'])
-        total_df_clusters = pd.concat([total_df_clusters, count_df], axis=0)
-
+        # drop any zero rows for compartments not in the image
         if exclude_missing_compartments:
-            total_df_clusters = self.exclude_empty_compartments(total_df_clusters)
+            total_df_clusters = self.exclude_empty_compartments(
+                total_df_clusters, compartment_area_df)
 
         self.adata_table.uns['cluster_stats'] = total_df_clusters
 
