@@ -75,6 +75,28 @@ class SpaceCat:
 
         return density_df
 
+    def get_frequencies(self, counts_df, groupby_cols):
+        """Function to summarize input data by cell type.
+        Args:
+            counts_df (pd.DataFrame): table containing cell counts data
+            groupby_cols (str): list of table columns to groupby
+
+        Returns:
+            pd.DataFrame:
+                dataframe containing the frequencies of cells
+        """
+        # total cell counts in image
+        total_counts = counts_df[groupby_cols + [self.label_col]]. \
+            groupby(groupby_cols, observed=False).sum().reset_index()
+        total_counts = total_counts.rename(columns={self.label_col: 'total_counts'})
+
+        # get frequencies by dividing cell type counts by total counts
+        transformed = counts_df.merge(total_counts, on=groupby_cols, how='left')
+        transformed[self.label_col] = transformed[self.label_col] / transformed['total_counts']
+        transformed = transformed.drop(columns=['total_counts'])
+
+        return transformed
+
     def long_df_helper(self, table, cluster_col_name, drop_cols, var_name, cluster_stats,
                        normalize, subset_col=None):
         """Function to summarize input data by cell type.
@@ -94,40 +116,34 @@ class SpaceCat:
 
         verify_in_list(cell_type_col=cluster_col_name, cell_table_columns=table.columns)
         verify_in_list(drop_cols=drop_cols, cell_table_columns=table.columns)
-        if subset_col:
-            verify_in_list(subset_col=subset_col, cell_table_columns=table.columns)
+        verify_in_list(subset_col=subset_col, cell_table_columns=table.columns)
 
         # drop columns from table
         table_small = table.drop(columns=drop_cols, errors="ignore")
 
-        # specific to cell cluster dataframe
+        # group by specified columns
+        groupby_cols = [self.image_col, cluster_col_name, subset_col] if subset_col else \
+            [self.image_col, cluster_col_name]
+        grouped_table = table_small.groupby(groupby_cols, observed=False)
+
         if cluster_stats:
-            # group by specified columns
-            groupby_cols = [self.image_col, subset_col] if subset_col else [self.image_col]
-            grouped_table = table_small.groupby(groupby_cols, observed=True)
+            # get cell counts
+            transformed = grouped_table.count().reset_index()
+            if normalize:
+                # get cell frequencies
+                groupby_cols.remove(cluster_col_name)
+                transformed = self.get_frequencies(transformed, groupby_cols)
 
-            # get counts or freqs
-            counts = grouped_table[cluster_col_name].value_counts(normalize=normalize)
-            transformed = counts.unstack(level=cluster_col_name, fill_value=0).stack()
-            transformed = transformed.reset_index()
-
-            # reshape to long df
-            long_df = transformed.rename(columns={cluster_col_name: 'cell_type', 0: 'value'})
         else:
-            # group by specified columns
-            groupby_cols = [self.image_col, cluster_col_name, subset_col] if subset_col else\
-                [self.image_col, cluster_col_name]
-            grouped_table = table_small.groupby(groupby_cols, observed=True)
-
+            # get sum or average of values
             transformed = grouped_table.agg('mean') if normalize else grouped_table.agg('sum')
-            transformed.reset_index(inplace=True)
+            transformed = transformed.reset_index(inplace=True)
 
             # reshape to long df
-            long_df = pd.melt(transformed, id_vars=groupby_cols, var_name=var_name)
-            long_df = long_df.rename(columns={cluster_col_name: 'cell_type'})
+            transformed = pd.melt(transformed, id_vars=groupby_cols, var_name=var_name)
 
-        if subset_col:
-            long_df = long_df.rename(columns={subset_col: 'subset', self.label_col: 'value'})
+        long_df = transformed.rename(
+            columns={cluster_col_name: 'cell_type', self.label_col: 'value', subset_col: 'subset'})
 
         return long_df
 
