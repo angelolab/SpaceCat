@@ -76,7 +76,7 @@ class SpaceCat:
         return density_df
 
     def get_frequencies(self, counts_df, groupby_cols):
-        """Function to summarize input data by cell type.
+        """Function to calculate frequencies based on count values.
         Args:
             counts_df (pd.DataFrame): table containing cell counts data
             groupby_cols (str): list of table columns to groupby
