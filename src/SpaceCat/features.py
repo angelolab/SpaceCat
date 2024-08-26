@@ -259,8 +259,7 @@ class SpaceCat:
 
         # drop any zero rows for compartments not in the image
         if exclude_missing_compartments:
-            total_df_clusters = self.exclude_empty_compartments(
-                total_df_clusters, compartment_area_df)
+            total_df_clusters = self.exclude_empty_compartments(total_df_clusters)
 
         self.adata_table.uns['cluster_stats'] = total_df_clusters
 
