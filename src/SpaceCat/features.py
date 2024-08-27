@@ -401,7 +401,7 @@ class SpaceCat:
             feature_df.loc[~feature_df.feature_name_unique.isin(
                 exclude_df.feature_name_unique.values), :]
 
-        return feature_df_filtered
+        return feature_df_filtered.reset_index(drop=True)
 
     def combine_features(self, correlation_filtering=0.7):
         """ Combines the previously generated feature tables into a single dataframe.
@@ -439,7 +439,7 @@ class SpaceCat:
             # save filtered feature df
             feature_df_filtered = self.remove_correlated_features(correlation_filtering)
             self.combined_feature_data_filtered = feature_df_filtered
-            self.adata_table.uns['combined_feature_data_filtered'] = feature_df
+            self.adata_table.uns['combined_feature_data_filtered'] = feature_df_filtered
 
             feature_df = feature_df_filtered
 
