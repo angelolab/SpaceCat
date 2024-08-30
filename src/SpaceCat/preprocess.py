@@ -1,9 +1,10 @@
 import anndata
+import scipy
 import numpy as np
 import pandas as pd
 
 from itertools import combinations
-from alpineer import verify_in_list
+from alpineer.misc_utils import verify_in_list
 
 
 def create_single_positive_table(marker_vals, threshold_list):
@@ -53,7 +54,7 @@ def create_functional_tables(adata_table, threshold_list):
         anndata:
             a new table with the marker positivity information included
     """
-    marker_vals = pd.DataFrame(adata_table.X, columns=adata_table.var_names).copy()
+    marker_vals = adata_table.to_df()
 
     # add functional marker positivity to anndata cell table
     sp_table = create_single_positive_table(marker_vals, threshold_list)
@@ -81,6 +82,16 @@ def preprocess_table(adata_table, threshold_list):
     """
     # check threshold list is subset of adata_table.X columns
     verify_in_list(provided_thresholds=[x[0] for x in threshold_list], all_markers=adata_table.var_names)
+
+    # check for sparse .X, convert to dense if necessary
+    if isinstance(adata_table.X, scipy.sparse.csr_matrix):
+        adata_table.X = adata_table.X.todense()
+
+    # ensure .X only contains numeric values
+    try:
+        _ = adata_table.to_df().apply(pd.to_numeric)
+    except ValueError:
+        raise ValueError("Ensure all values contained in adata.X are numeric values.")
 
     # add functional marker positivity data
     adata_new = create_functional_tables(adata_table, threshold_list)
