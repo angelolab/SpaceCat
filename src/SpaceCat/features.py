@@ -8,13 +8,19 @@ from alpineer.misc_utils import verify_in_list
 
 class SpaceCat:
 
-    def __init__(self, adata_table, image_key, seg_label_key, cluster_key, compartment_key):
+    def __init__(self, adata_table, image_key, seg_label_key, cell_area_key, cluster_key,
+                 compartment_key, compartment_area_key):
         self.adata_table = adata_table.copy()
         self.image_key = image_key
         self.seg_label_key = seg_label_key
+        self.cell_area_key = cell_area_key
         self.cluster_key = cluster_key
-        self.compartment_key = compartment_key
-        self.compartment_list = list(np.unique(adata_table.obs[compartment_key])) + ['all']
+        self.compartment_key_none = False if compartment_key else True
+        self.compartment_key = compartment_key if compartment_key else 'compartment'
+        self.compartment_area_key = compartment_area_key if compartment_area_key else 'compartment_area'
+        self.compartment_list = list(
+            np.unique(adata_table.obs[compartment_key])) if not self.compartment_key_none else []
+        self.compartment_list = self.compartment_list + ['all']
 
         self.feature_data_list = []
         self.combined_feature_data = None
@@ -58,20 +64,14 @@ class SpaceCat:
         count_metrics = [x for x in count_metrics if 'count' in x]
         count_df = total_df_clusters.loc[total_df_clusters.metric.isin(count_metrics), :]
 
-        # calculate total image area and append to area df
-        compartment_area_df = compartment_area_df.rename(columns={self.compartment_key: 'subset'})
-        all_area = compartment_area_df[[self.image_key, self.compartment_key + '_area']].groupby(
-            by=[self.image_key]).sum().reset_index()
-        all_area['subset'] = 'all'
-        area_df = pd.concat([compartment_area_df, all_area])
-
         # calculate density stats
-        density_df = count_df.merge(area_df, on=[self.image_key, 'subset'], how='left')
-        density_df['value'] = density_df['value'] / density_df[self.compartment_key + '_area']*1000
+        compartment_area_df = compartment_area_df.rename(columns={self.compartment_key: 'subset'})
+        density_df = count_df.merge(compartment_area_df, on=[self.image_key, 'subset'], how='left')
+        density_df['value'] = density_df['value'] / density_df[self.compartment_area_key] * 1000
 
         # rename metric from count to density
         density_df['metric'] = density_df['metric'].str.replace('count', 'density')
-        density_df = density_df.drop(columns=[self.compartment_key + '_area'])
+        density_df = density_df.drop(columns=[self.compartment_area_key])
 
         return density_df
 
@@ -96,6 +96,32 @@ class SpaceCat:
         transformed = transformed.drop(columns=['total_counts'])
 
         return transformed
+
+    def get_compartment_areas(self):
+        """ Helper function to get the appropriate compartment area table for the data.
+           Returns:
+                 pd.DataFrame:
+                    the table with compartment areas, calculates all cell area if no compartments
+        """
+        if self.compartment_key_none:
+            # calculate image wide area by cell area
+            cell_area_df = self.adata_table.obs[[self.image_key, self.cell_area_key]]
+            area_df = cell_area_df.groupby(by=[self.image_key]).sum().reset_index()
+            area_df[self.compartment_key] = 'all'
+            area_df = area_df.rename(columns={self.cell_area_key: self.compartment_area_key})
+        else:
+            # subset df for compartment area
+            compartment_area_df = self.adata_table.obs[
+                [self.image_key, self.compartment_key, self.compartment_area_key]]. \
+                drop_duplicates()
+
+            # calculate total image area and append to area df
+            all_area = compartment_area_df[[self.image_key, self.compartment_area_key]].groupby(
+                by=[self.image_key]).sum().reset_index()
+            all_area[self.compartment_key] = 'all'
+            area_df = pd.concat([compartment_area_df, all_area])
+
+        return area_df
 
     def long_df_helper(self, table, cluster_col_name, drop_cols, var_name, cluster_stats,
                        normalize, subset_col=None):
@@ -200,6 +226,8 @@ class SpaceCat:
             saves the cluster_stats to the class which contains counts, freqs, & densities of each
             cell type in the compartments/image, as well as stats across all cell types
         """
+        subset_col = None if self.compartment_key_none else self.compartment_key
+
         cluster_dfs = []
         for result_name, cluster_col_name, normalize in cluster_df_params:
             drop_cols = []
@@ -212,7 +240,7 @@ class SpaceCat:
                                                    cluster_col_name=cluster_col_name,
                                                    result_name=result_name,
                                                    var_name='cell_type',
-                                                   subset_col=self.compartment_key,
+                                                   subset_col=subset_col,
                                                    cluster_stats=True,
                                                    normalize=normalize,
                                                    drop_cols=drop_cols))
@@ -234,23 +262,26 @@ class SpaceCat:
         grouped_cell_counts = cell_table_clusters[[self.image_key]].groupby(
             self.image_key, observed=True).value_counts()
         grouped_cell_counts = add_feature_metadata(grouped_cell_counts, metric='total_cell_count')
+        total_stats = [grouped_cell_counts]
 
-        # calculate total number of cells per region per image
-        grouped_cell_counts_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
-            groupby([self.image_key, self.compartment_key], observed=True).value_counts()
-        grouped_cell_counts_region = add_feature_metadata(
-            grouped_cell_counts_region, metric='total_cell_count', compartment_col=True)
+        if not self.compartment_key_none:
+            # calculate total number of cells per region per image
+            grouped_cell_counts_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
+                groupby([self.image_key, self.compartment_key], observed=True).value_counts()
+            grouped_cell_counts_region = add_feature_metadata(
+                grouped_cell_counts_region, metric='total_cell_count', compartment_col=True)
 
-        # calculate proportions of cells per region per image
-        grouped_cell_freq_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
-            groupby([self.image_key], observed=True)[self.compartment_key].\
-            value_counts(normalize=True)
-        grouped_cell_freq_region = add_feature_metadata(
-            grouped_cell_freq_region, metric='total_cell_freq', compartment_col=True)
+            # calculate proportions of cells per region per image
+            grouped_cell_freq_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
+                groupby([self.image_key], observed=True)[self.compartment_key].\
+                value_counts(normalize=True)
+            grouped_cell_freq_region = add_feature_metadata(
+                grouped_cell_freq_region, metric='total_cell_freq', compartment_col=True)
+
+            total_stats.extend([grouped_cell_counts_region, grouped_cell_freq_region])
 
         # add manually defined dfs to overall df
-        cluster_dfs.extend(
-            [grouped_cell_counts, grouped_cell_counts_region, grouped_cell_freq_region])
+        cluster_dfs.extend(total_stats)
         total_df_clusters = pd.concat(cluster_dfs, axis=0)
 
         # compute density of cells for counts-based metrics and add to overall df
@@ -466,13 +497,12 @@ class SpaceCat:
             cluster_params.append([column + '_count', column, False])
 
         # subset table for cluster data
+        compartment_col = [] if self.compartment_key_none else [self.compartment_key]
         cell_table_clusters = self.adata_table.obs[
-            [self.image_key, self.seg_label_key, self.compartment_key] + self.cluster_key]
-        compartment_area_df = self.adata_table.obs[
-            [self.image_key, self.compartment_key, self.compartment_key + '_area']].\
-            drop_duplicates()
-        self.generate_cluster_stats(
-            cell_table_clusters, cluster_params, compartment_area_df)
+            [self.image_key, self.seg_label_key] + compartment_col + self.cluster_key]
+        compartment_area_df = self.get_compartment_areas()
+
+        self.generate_cluster_stats(cell_table_clusters, cluster_params, compartment_area_df)
 
         # set density feature parameters
         stats_df = self.adata_table.uns['cluster_stats']
