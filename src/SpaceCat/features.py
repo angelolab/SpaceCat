@@ -99,9 +99,9 @@ class SpaceCat:
 
     def get_compartment_areas(self):
         """ Helper function to get the appropriate compartment area table for the data.
-           Returns:
-                 pd.DataFrame:
-                    the table with compartment areas, calculates all cell area if no compartments
+        Returns:
+            pd.DataFrame:
+                the table with compartment areas, calculates all cell area if no compartments
         """
         if self.compartment_key_none:
             # calculate image wide area by cell area
