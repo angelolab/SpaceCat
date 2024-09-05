@@ -421,6 +421,7 @@ class SpaceCat:
         Returns:
             generates and saves feature dataframe, as well as the filtered dataframe
         """
+        subset_col = None if self.compartment_key_none else self.compartment_key
 
         stats_dfs = []
         for result_name, cluster_col_name, normalize in params:
@@ -435,7 +436,7 @@ class SpaceCat:
                                                  cluster_col_name=cluster_col_name,
                                                  drop_cols=drop_cols,
                                                  normalize=normalize,
-                                                 subset_col=self.compartment_key))
+                                                 subset_col=subset_col))
         stats_df = pd.concat(stats_dfs, axis=0)
         total_df = stats_df
         self.adata_table.uns[df_name] = total_df.reset_index(drop=True)
@@ -721,6 +722,7 @@ class SpaceCat:
         total_df = pd.concat([total_df, long_df]).reset_index(drop=True)
         if filter_stats or deduplicate_stats:
             self.adata_table.uns['functional_stats_filtered'] = total_df
+            self.adata_table.uns['functional_stats'] = pd.concat([self.adata_table.uns['functional_stats'], long_df])
         else:
             self.adata_table.uns['functional_stats'] = total_df
 
