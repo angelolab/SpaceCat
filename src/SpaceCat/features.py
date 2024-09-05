@@ -555,13 +555,13 @@ class SpaceCat:
         self.adata_table.uns['feature_metadata'] = feature_metadata
 
     def run_spacecat(self, functional_feature_level, filter_stats=True, deduplicate_stats=True,
-                     correlation_filtering=0.7):
+                     correlation_filtering_thresh=0.7):
         """ Main function to calculate all cell stats and generate the final feature table.
         Args:
             functional_feature_level (str): clustering level to check all functional marker positivities against
             filter_stats (bool): whether to filter features by minimum cell count
             deduplicate_stats (bool): whether to deduplicate highly correlated features
-            correlation_filtering (float): the correlation threshold for final feature filtering
+            correlation_filtering_thresh (float): the correlation threshold for final feature filtering
         Returns:
              anndata:
                 the anndata table with all intermediate and final tables appended
@@ -619,7 +619,7 @@ class SpaceCat:
             self.format_computed_features(stats_df, col_name, metrics)
 
         # combine into full feature df
-        self.combine_features(correlation_filtering)
+        self.combine_features(correlation_filtering_thresh)
 
         return self.adata_table
 
