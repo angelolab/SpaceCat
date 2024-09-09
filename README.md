@@ -15,9 +15,6 @@ to decide how to group your cells together. However, once you've generated this 
 
 
 ## Installation
-Dependencies
-* Python >= 3.9, numpy >= 1.24, pandas >= 2, anndata, scipy, alpineer == 0.1.12
-
 You can install the package with pip by
 ```commandline
 pip install SpaceCat
