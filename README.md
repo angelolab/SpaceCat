@@ -13,8 +13,6 @@ In order to take advantage of all the features in SpaceCat, we recommend you gen
 you might want to look more broadly at total T cell abundance for some features, whereas in others it would be more beneficial to look specifically at exhausted CD8 T cells. SpaceCat cannot generate these hierarchies for you; it's up to you
 to decide how to group your cells together. However, once you've generated this grouping, you are then ready to run SpaceCat!
 
-We are currently in the process of pulling out the key components of the SpaceCat pipeline into this independent repository. Right now, the code is baked into the scripts for the paper. If you're curious, you can take a look and get started here: https://github.com/angelolab/publications/tree/main/2024-Greenwald_Nederlof_etal_TONIC
-
 
 ## Installation
 Dependencies
