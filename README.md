@@ -54,6 +54,7 @@ The required variables are:
 * `seg_label_key`: column name in .obs which denotes the cell segmentation label
 * `cell_area_key`: column name in .obs which denotes the cell area
 * `cluster_key`: list of column names in .obs containing the various cell assignments
+* `functional_feature_level`: which of the cluster levels to generate functional features for
 
 Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
