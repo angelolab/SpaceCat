@@ -34,7 +34,7 @@ import anndata
 data_dir = 'path/to/data'
 adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 ```
-If your data is in csv format and needs to be converted, see [AnnData Conversion](#AnnData-Conversionn) below.
+If your data is in csv format and needs to be converted, see [AnnData Conversion](#anndata-conversion) below.
 
 ### Preprocessing
 Your single cell data, will require some preprocessing before SpaceCat can generate features. 
