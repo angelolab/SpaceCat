@@ -437,18 +437,16 @@ class SpaceCat:
                                                  drop_cols=drop_cols,
                                                  normalize=normalize,
                                                  subset_col=subset_col))
-        stats_df = pd.concat(stats_dfs, axis=0)
-        total_df = stats_df
-        self.adata_table.uns[df_name] = total_df.reset_index(drop=True)
+        stats_df_comb = pd.concat(stats_dfs, axis=0)
+        self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
 
         if df_name == 'functional_stats':
-            self.filter_functional_features(table, total_df, filter_stats, deduplicate_stats)
+            self.filter_functional_features(table, stats_df_comb, filter_stats, deduplicate_stats)
         else:
             if filter_stats:
                 # filter stats by minimum cell count
-                cell_filtered_df = self.filter_stats_by_cell_count(total_df)
-                total_df = cell_filtered_df
-                self.adata_table.uns[df_name + '_filtered'] = total_df
+                cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
+                self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df
 
     def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.1):
         """  A function to filter out features that are highly correlated in compartments.
