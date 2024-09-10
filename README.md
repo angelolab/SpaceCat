@@ -15,9 +15,9 @@ to decide how to group your cells together. However, once you've generated this 
 
 ## Table of Contents
 - [1. Installation](#installation)
-- [2. AnnData Conversion](#anndata-conversion)
   - [conda environment](#conda-environment)
   - [pip install (coming soon)](#pip-install-coming-soon)
+- [2. AnnData Conversion](#anndata-conversion)
 - [3. Preprocessing](#preprocessing)
 - [4. Feature Generation](#feature-generation)
 
@@ -68,7 +68,6 @@ centroid_cols = ['centroid-0', 'centroid-1']
 ```
 Create the anndata object and save.
 ```commandline
-
 # create anndata from table subsetted for marker info, which will be stored in adata.X
 adata = anndata.AnnData(cell_table.loc[:, markers])
 
