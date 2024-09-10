@@ -13,14 +13,73 @@ In order to take advantage of all the features in SpaceCat, we recommend you gen
 you might want to look more broadly at total T cell abundance for some features, whereas in others it would be more beneficial to look specifically at exhausted CD8 T cells. SpaceCat cannot generate these hierarchies for you; it's up to you
 to decide how to group your cells together. However, once you've generated this grouping, you are then ready to run SpaceCat!
 
+## Table of Contents
+- [1. Installation](#installation)
+- [2. AnnData Conversion](#anndata-conversion)
+  - [conda environment](#conda-environment)
+  - [pip install (coming soon)](#pip-install-coming-soon)
+- [3. Preprocessing](#preprocessing)
+- [4. Feature Generation](#feature-generation)
+
 
 ## Installation
-You can install the package with pip by
+### conda environment
+You can clone the git repository and install the necessary dependencies using the provided yml file. 
+First clone the repository with 
 ```commandline
-pip install SpaceCat
+git clone https://github.com/angelolab/SpaceCat
+```
+Then change the working directory and create the conda environment using the provided yml file.
+```commandline
+cd SpaceCat
+conda env create -f environment.yml
+```
+Once the environment is created, you can activate it with
+```commandline
+conda activate spacecat_env
 ```
 
-## Example Usage
+
+### pip install (coming soon)
+We are currently working on making SpaceCat pip installable!
+
+## AnnData Conversion
+If your single cell table is in csv format, it can be quickly converted to anndata using the below code.
+
+Provide the necessary input variables.
+```commandline
+# read in data
+data_dir = 'path/to/data'
+cell_table = pd.read_csv('path/to/cell_table.csv')
+metadata = pd.read_csv('path/to/metadata_table.csv')
+
+# merge metadata into cell table if needed
+cell_table = pd.merge(cell_table, metadata, on=['fov'])
+
+# define column groupings
+markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
+cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
+                  'compartment', 'compartment_area', 'area', 'cell_size', 'metadata_colum1', 'metadata_colum2']
+centroid_cols = ['centroid-0', 'centroid-1']
+```
+Create the anndata object and save.
+```commandline
+
+# create anndata from table subsetted for marker info, which will be stored in adata.X
+adata = anndata.AnnData(cell_table.loc[:, markers])
+
+# store all other cell data in adata.obs
+adata.obs = cell_table.loc[:, cell_data_cols, ]
+adata.obs_names = [str(i) for i in adata.obs_names]
+
+# store cell centroid data in adata.obsm
+adata.obsm['spatial'] = cell_table.loc[:, centroid_cols].values
+
+# save the anndata object
+os.makedirs(os.path.join(data_dir, 'adata'), exist_ok=True)
+adata.write_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
+```
+
 Once your data is stored in an anndata object, simply read in the single cell data with 
 ```commandline
 import os
@@ -29,9 +88,8 @@ import anndata
 data_dir = 'path/to/data'
 adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 ```
-If your data is in csv format and needs to be converted, see [AnnData Conversion](#anndata-conversion) below.
 
-### Preprocessing
+## Preprocessing
 Your single cell data, will require some preprocessing before SpaceCat can generate features. 
 This preprocessed anndata output will only need to be generated once and saved.
 
@@ -46,7 +104,7 @@ adata_processed = preprocess_table(adata, functional_marker_thresholds)
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 
-### Feature Generation
+## Feature Generation
 Once we have the appropriate input, we can set the required parameters and generate some features!
 
 The required variables are:
@@ -93,39 +151,3 @@ adata_processed.uns['feature_metadata'].to_csv(os.path.join(data_dir, 'SpaceCat'
 adata_processed.uns['excluded_features'].to_csv(os.path.join(data_dir, 'SpaceCat', 'excluded_features.csv'), index=False)
 ```
 
-### AnnData Conversion
-If your single cell table is in csv format, it can be quickly converted to anndata using the below code.
-
-Provide the necessary input variables.
-```commandline
-# read in data
-data_dir = 'path/to/data'
-cell_table = pd.read_csv('path/to/cell_table.csv')
-metadata = pd.read_csv('path/to/metadata_table.csv')
-
-# merge metadata into cell table if needed
-cell_table = pd.merge(cell_table, metadata, on=['fov'])
-
-# define column groupings
-markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
-cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment', 'compartment_area', 'area', 'cell_size', 'metadata_colum1', 'metadata_colum2']
-centroid_cols = ['centroid-0', 'centroid-1']
-```
-Create the anndata object and save.
-```commandline
-
-# create anndata from table subsetted for marker info, which will be stored in adata.X
-adata = anndata.AnnData(cell_table.loc[:, markers])
-
-# store all other cell data in adata.obs
-adata.obs = cell_table.loc[:, cell_data_cols, ]
-adata.obs_names = [str(i) for i in adata.obs_names]
-
-# store cell centroid data in adata.obsm
-adata.obsm['spatial'] = cell_table.loc[:, centroid_cols].values
-
-# save the anndata object
-os.makedirs(os.path.join(data_dir, 'adata'), exist_ok=True)
-adata.write_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
-```
