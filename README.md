@@ -48,6 +48,10 @@ If your single cell table is in csv format, it can be quickly converted to annda
 
 Provide the necessary input variables.
 ```commandline
+import os
+import anndata
+import pandas as pd
+
 # read in data
 data_dir = 'path/to/data'
 cell_table = pd.read_csv('path/to/cell_table.csv')
@@ -82,10 +86,6 @@ adata.write_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 
 Once your data is stored in an anndata object, simply read in the single cell data with 
 ```commandline
-import os
-import anndata
-
-data_dir = 'path/to/data'
 adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 ```
 
