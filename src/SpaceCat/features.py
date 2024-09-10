@@ -127,7 +127,7 @@ class SpaceCat:
 
             # calculate total image area and append to area df
             all_area = compartment_area_df[[self.image_key, self.compartment_area_key]].groupby(
-                by=[self.image_key]).sum().reset_index()
+                by=[self.image_key], observed=True).sum().reset_index()
             all_area[self.compartment_key] = 'all'
             area_df = pd.concat([compartment_area_df, all_area])
 
@@ -710,7 +710,7 @@ class SpaceCat:
         sub_table = sub_table.loc[:, ~sub_table.columns.isin(dp_markers)]
 
         # average values per image
-        transformed = sub_table.groupby(self.image_key).agg('mean').reset_index()
+        transformed = sub_table.groupby(self.image_key, observed=True).agg('mean').reset_index()
 
         # reshape to long df
         long_df = pd.melt(transformed, id_vars=[self.image_key], var_name='functional_marker')
@@ -855,6 +855,7 @@ class SpaceCat:
             func_df = total_df[total_df.metric.isin([f'{cluster}_count', f'{cluster}_freq'])]
 
             # add unique identifier for cell + marker combo
+            func_df = func_df.copy()
             func_df['feature_name'] = func_df['cell_type'] + '__' + func_df['functional_marker']
 
             # remove double positive markers that are highly correlated with single positive scores

@@ -6,6 +6,8 @@ import pandas as pd
 from itertools import combinations
 from alpineer.misc_utils import verify_in_list
 
+pd.set_option("future.no_silent_downcasting", True)
+
 
 def create_single_positive_table(marker_vals, threshold_list):
     """ Determine whether a cell is positive for a marker based on the provided threshold.
@@ -37,8 +39,10 @@ def create_double_positive_table(marker_vals, threshold_list):
     # pairwise marker thresholding to determine cells positive for combinations of any two markers
     functional_markers = [x[0] for x in threshold_list]
     for marker1, marker2 in combinations(functional_markers, 2):
-        marker_vals[marker1 + '__' + marker2 + '+'] = np.logical_and(marker_vals[marker1 + '+'],
-                                                                     marker_vals[marker2 + '+'])
+        dp_positvity = pd.DataFrame({marker1 + '__' + marker2 + '+': []})
+        dp_positvity[marker1 + '__' + marker2 + '+'] = np.logical_and(marker_vals[marker1 + '+'],
+                                                                      marker_vals[marker2 + '+'])
+        marker_vals = pd.concat((marker_vals, dp_positvity), axis=1)
 
     return marker_vals
 
@@ -62,7 +66,9 @@ def create_functional_tables(adata_table, threshold_list):
     dp_table = dp_table.replace({True: 1, False: 0})
 
     # create new anndata table with marker positivity contained in .X
-    adata_new = anndata.AnnData(dp_table)
+    adata_new = anndata.AnnData(np.array(dp_table))
+    adata_new.X = adata_new.X.astype(np.float32)
+    adata_new.var_names = dp_table.columns
     adata_new.obs = adata_table.obs.copy()
     adata_new.obsm = adata_table.obsm.copy()
     adata_new.obsp = adata_table.obsp.copy()
