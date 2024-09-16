@@ -469,7 +469,7 @@ class SpaceCat:
             fov_data_feature = feature_df.loc[feature_df.feature_name == feature_name, :]
 
             # get the compartments present for this feature
-            compartments = fov_data_feature.compartment.unique()
+            compartments = fov_data_feature[self.compartment_key].unique()
 
             # if only one compartment, skip
             if len(compartments) == 1:
@@ -651,11 +651,11 @@ class SpaceCat:
                 for cell_type in count_df.cell_type.unique():
                     keep_df = count_df[count_df.cell_type == cell_type]
                     keep_df = keep_df[keep_df.value >= min_cell_count]
-                    keep_fovs = keep_df.fov.unique()
+                    keep_fovs = keep_df[self.image_key].unique()
 
                     # subset functional df to only include FOVs with high enough counts
                     keep_stats = subset_df[subset_df.cell_type == cell_type]
-                    keep_stats = keep_stats[keep_stats.fov.isin(keep_fovs)]
+                    keep_stats = keep_stats[keep_stats[self.image_key].isin(keep_fovs)]
 
                     # append to list of filtered dfs
                     filtered_dfs.append(keep_stats)
