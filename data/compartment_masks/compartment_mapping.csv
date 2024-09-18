@@ -1,0 +1,5 @@
+﻿compartment_id,compartment_name
+1,stroma_core
+2,stroma_border
+3,cancer_border
+4,cancer_core
