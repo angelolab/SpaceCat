@@ -13,13 +13,22 @@ In order to take advantage of all the features in SpaceCat, we recommend you gen
 you might want to look more broadly at total T cell abundance for some features, whereas in others it would be more beneficial to look specifically at exhausted CD8 T cells. SpaceCat cannot generate these hierarchies for you; it's up to you
 to decide how to group your cells together. However, once you've generated this grouping, you are then ready to run SpaceCat!
 
+We have provided an [example dataset](https://github.com/angelolab/SpaceCat/tree/main/data) to help you understand what your data should look like before utilizing SpaceCat. 
+If you want to test out our tool, you can quickly run SpaceCat using the code below and the example files!
+
 ## Table of Contents
 - [1. Installation](#installation)
   - [conda environment](#conda-environment)
   - [pip install (coming soon)](#pip-install-coming-soon)
 - [2. AnnData Conversion](#anndata-conversion)
+  - [cell table format](#cell-table-format)
+  - [metadata format](#metadata-format)
+  - [conversion steps](#conversion-steps)
 - [3. Preprocessing](#preprocessing)
 - [4. Feature Generation](#feature-generation)
+  - [running SpaceCat](#running-spacecat)
+  - [output tables](#output-tables)
+  - [feature descriptions](#feature-descriptions)
 
 
 ## Installation
@@ -39,14 +48,33 @@ Once the environment is created, you can activate it with
 conda activate spacecat_env
 ```
 
-
 ### pip install (coming soon)
 We are currently working on making SpaceCat pip installable!
 
 ## AnnData Conversion
+
+### Cell Table Format
+Your cell table will require a minimum amount of data to generate fundamental features. You can refer to `cell_table.csv` in the [example data](https://github.com/angelolab/SpaceCat/tree/main/data) for reference.
+- The **image name** column identifies specific regions of tissue in your data, denoted by `fov` in the example cell table.
+- The **cell label** column identifies the label for each cell in the image, denoted by `label` in the example cell table.
+- The **cell area** column identifies the area of each cell, denoted by `area` in the example cell table.
+- The two **centroid columns** should detail the x and y location of each cell in the image, denoted by `centroid-0` and `centroid-1` in the example cell table. 
+- At least one **cell type** assignment column is necessary to generate SpaceCat feature; however we recommend you include two or more levels of granularity.
+These columns are denoted by `cell_meta_cluster`, `cell_cluster`, and `cell_cluster_broad` in the example cell table.
+- Columns detailing the normalized **signal intensity** in each cell are included in the example cell table, so that functional marker features to be generated. 
+You may include all markers in the initial cell table conversion, and filter which functional markers you would specifically like to include as features in the [preprocessing section](#preprocessing) below.
+
+### Metadata Format
+The metadata file should contain any image level and tissue specific information. 
+The one required column is **image column**, named the same as in the cell table, so that the metadata can be merged into the cell table and stored in the anndata object created in the next step.
+The example metadata.csv contains the image column `fov`, a column denoting which tissue sample an image belongs to `Tissue_ID`,	
+a column denoting which patient the tissue belongs to `Patient_ID`, information on which timepoint the sample was collected at `Timepoint`, and 
+the location of the sample `Localization`.
+
+### Conversion Steps
 If your single cell table is in csv format, it can be quickly converted to anndata using the below code.
 
-Provide the necessary input variables.
+Step 1: Read in the data files.
 ```commandline
 import os
 import anndata
@@ -59,14 +87,24 @@ metadata = pd.read_csv('path/to/metadata_table.csv')
 
 # merge metadata into cell table if needed
 cell_table = pd.merge(cell_table, metadata, on=['fov'])
+```
 
+Step 2: Provide the necessary input variables.
+
+The required variables are:
+* `markers`: list of columns in your cell table representing marker intensity 
+* `centroid_cols`: list of two columns that denote the centroid values of each cell
+* `cell_data_cols`: list including the necessary columns [above](#cell-table-format), as well as any other columns from the cell table containing features you would like to include
+
+```commandline
 # define column groupings
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
+centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
                   'compartment', 'compartment_area', 'area', 'cell_size', 'metadata_colum1', 'metadata_colum2']
-centroid_cols = ['centroid-0', 'centroid-1']
 ```
-Create the anndata object and save.
+
+Step 3: Create the anndata object and save.
 ```commandline
 # create anndata from table subsetted for marker info, which will be stored in adata.X
 adata = anndata.AnnData(cell_table.loc[:, markers])
@@ -89,21 +127,25 @@ adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 ```
 
 ## Preprocessing
-Your single cell data, will require some preprocessing before SpaceCat can generate features. 
+Your single cell data will require some preprocessing before SpaceCat can generate features. 
 This preprocessed anndata output will only need to be generated once and saved.
 
 **You will need to provide appropriate thresholds to indicate whether a cell is positive for each marker. 
-This information will be used to generate functional marker features in SpaceCat.**
+This information will be used to generate functional marker [features](#feature-descriptions) in SpaceCat.**
+```commandline
+functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002]]
+```
+
+Then, you can run the preprocessing function and save the resulting anndata.
 ```commandline
 from SpaceCat.preprocess import preprocess_table
-
-functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002]]
 
 adata_processed = preprocess_table(adata, functional_marker_thresholds)
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 
 ## Feature Generation
+### Running SpaceCat
 Once we have the appropriate input, we can set the required parameters and generate some features!
 
 The required variables are:
@@ -118,6 +160,7 @@ Optional variables are:
 * `compartment_area_key`: column name in .obs which stores the compartment areas
 
 When provided with compartment information, SpaceCat will calculate region specific features for your data, as well as at the image level.
+We are currently working on preprocessing functions to assign cells to compartment regions either using pre-existing masks as input, or by generating custom masks here.
 
 **If you do not have compartment assignments and areas for each cell, set both of these variables to `None` to direct
 SpaceCat to compute only the image level features.**
@@ -138,7 +181,7 @@ adata_processed = features.run_spacecat(functional_feature_level='cell_cluster')
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 
-### Output
+### Output Tables
 The output feature tables are stored in adata_processed.uns, and can be saved out to csvs if preferred.
 ```commandline
 # Save finalized tables to csv 
@@ -150,3 +193,17 @@ adata_processed.uns['feature_metadata'].to_csv(os.path.join(data_dir, 'SpaceCat'
 adata_processed.uns['excluded_features'].to_csv(os.path.join(data_dir, 'SpaceCat', 'excluded_features.csv'), index=False)
 ```
 
+### Feature Descriptions
+Each of the features are computed at two region levels, image-wide and within individual compartments (if specified).
+- `density`: The number of cells divided by the area of the region.
+- `density_ratio`: The ratio between the densities of cell types.
+  - Using a minimum density threshold for ratios, if both cell densities were below the threshold, the ratio for that image was not calculated.
+- `functional_marker`: For each cell type/functional marker combination, the proportion of cells above the marker-specific threshold was calculated.
+  - Marker frequencies were not computed for regions with fewer than a set minimum number of cells.
+
+Coming soon:
+- `cell_diversity`: This diversity feature is based on cell proximity. For each cell in the image, the proportions of each cell type within a specified pixel radius was computed. Then the Shannon diversity index was calculated on these proportions.
+- `region_diversity`: This diversity feature is based on cell abundance. For the broadest cell cluster level, the proportion of cells of each cell type was extracted. Then the Shannon diversity index was calculated on these proportions.
+- `density_proportion`: For each lower level cell type in a given broader cell type category, the proportion of the number of broader cells that the lower cell type represented was calculated. 
+  - This feature was computed for cells at a broad level of clustering that were composed of at least two distinct lower cell types.
+- `kmeans_cluster`: Using k-means clustering to define cell neighborhoods in each image, we then calculated the proportion of cells belonging to each of the identified clusters across the region.
