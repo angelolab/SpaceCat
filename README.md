@@ -81,9 +81,9 @@ import anndata
 import pandas as pd
 
 # read in data
-data_dir = 'path/to/data'
-cell_table = pd.read_csv('path/to/cell_table.csv')
-metadata = pd.read_csv('path/to/metadata_table.csv')
+data_dir = '/Documents/SpaceCat/data'
+cell_table = pd.read_csv(os.path.join(data_dir, 'cell_table.csv'))
+metadata = pd.read_csv(os.path.join(data_dir, 'metadata.csv'))
 
 # merge metadata into cell table if needed
 cell_table = pd.merge(cell_table, metadata, on=['fov'])
@@ -94,14 +94,15 @@ Step 2: Provide the necessary input variables.
 The required variables are:
 * `markers`: list of columns in your cell table representing marker intensity 
 * `centroid_cols`: list of two columns that denote the centroid values of each cell
-* `cell_data_cols`: list including the necessary columns [above](#cell-table-format), as well as any other columns from the cell table containing features you would like to include
+* `cell_data_cols`: list including the necessary columns [above](#cell-table-format), as well as any other columns from the cell table containing features or metadata you would like to include 
 
 ```commandline
 # define column groupings
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment', 'compartment_area', 'area', 'cell_size', 'metadata_colum1', 'metadata_colum2']
+                  'compartment', 'compartment_area', 'area', 'cell_size', 'Tissue_ID', 'Patient_ID',
+                  'Timepoint', 'Localization']
 ```
 
 Step 3: Create the anndata object and save.
