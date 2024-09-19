@@ -60,7 +60,7 @@ Your cell table will require a minimum amount of data to generate fundamental fe
 - The **segmentation label** column identifies the label for each cell in the image, denoted by `label` in the example cell table.
 - The **cell area** column identifies the area of each cell, denoted by `area` in the example cell table.
 - The two **centroid columns** should detail the x and y location of each cell in the image, denoted by `centroid-0` and `centroid-1` in the example cell table. 
-- At least one **cluster** assignment column denotes each cell type and is necessary to generate SpaceCat feature; however we recommend you include two or more levels of granularity.
+- At least one **cluster** assignment column needs to specify each cell type in order to generate SpaceCat features; however we recommend you include two or more levels of granularity.
 These columns are denoted by `cell_meta_cluster`, `cell_cluster`, and `cell_cluster_broad` in the example cell table.
 - Columns detailing the normalized **signal intensity** in each cell are included in the example cell table, so that functional marker features to be generated. 
 You may include all markers in the initial cell table conversion, and filter which functional markers you would specifically like to include as features in the [preprocessing section](#preprocessing) below.
