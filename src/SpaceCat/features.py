@@ -490,10 +490,8 @@ class SpaceCat:
             # compute correlations
             compartments = fov_data_wide.columns
             compartments = compartments[compartments != 'all']
-            if np.count_nonzero(~np.isnan(fov_data_wide['all'])) <= 3:
-                continue
             for compartment in compartments:
-                if np.count_nonzero(~np.isnan(fov_data_wide[compartment])) <= 3:
+                if (~np.isnan(fov_data_wide['all'].values * fov_data_wide[compartment].values)).sum() < 3:
                     continue
                 corr, _ = spearmanr(fov_data_wide['all'].values, fov_data_wide[compartment].values,
                                     nan_policy='omit')
