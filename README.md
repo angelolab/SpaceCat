@@ -28,6 +28,7 @@ If you want to test out our tool, you can quickly run SpaceCat using the code be
 - [4. Feature Generation](#feature-generation)
   - [running SpaceCat](#running-spacecat)
   - [output tables](#output-tables)
+  - [adding metadata](#adding-metadata)
   - [feature descriptions](#feature-descriptions)
 
 
@@ -56,10 +57,10 @@ We are currently working on making SpaceCat pip installable!
 ### Cell Table Format
 Your cell table will require a minimum amount of data to generate fundamental features. You can refer to `cell_table.csv` in the [example data](https://github.com/angelolab/SpaceCat/tree/main/data) for reference.
 - The **image name** column identifies specific regions of tissue in your data, denoted by `fov` in the example cell table.
-- The **cell label** column identifies the label for each cell in the image, denoted by `label` in the example cell table.
+- The **segmentation label** column identifies the label for each cell in the image, denoted by `label` in the example cell table.
 - The **cell area** column identifies the area of each cell, denoted by `area` in the example cell table.
 - The two **centroid columns** should detail the x and y location of each cell in the image, denoted by `centroid-0` and `centroid-1` in the example cell table. 
-- At least one **cell type** assignment column is necessary to generate SpaceCat feature; however we recommend you include two or more levels of granularity.
+- At least one **cluster** assignment column denotes each cell type and is necessary to generate SpaceCat feature; however we recommend you include two or more levels of granularity.
 These columns are denoted by `cell_meta_cluster`, `cell_cluster`, and `cell_cluster_broad` in the example cell table.
 - Columns detailing the normalized **signal intensity** in each cell are included in the example cell table, so that functional marker features to be generated. 
 You may include all markers in the initial cell table conversion, and filter which functional markers you would specifically like to include as features in the [preprocessing section](#preprocessing) below.
@@ -83,10 +84,6 @@ import pandas as pd
 # read in data
 data_dir = '/Documents/SpaceCat/data'
 cell_table = pd.read_csv(os.path.join(data_dir, 'cell_table.csv'))
-metadata = pd.read_csv(os.path.join(data_dir, 'metadata.csv'))
-
-# merge metadata into cell table if needed
-cell_table = pd.merge(cell_table, metadata, on=['fov'])
 ```
 
 Step 2: Provide the necessary input variables.
@@ -94,15 +91,14 @@ Step 2: Provide the necessary input variables.
 The required variables are:
 * `markers`: list of columns in your cell table representing marker intensity 
 * `centroid_cols`: list of two columns that denote the centroid values of each cell
-* `cell_data_cols`: list including the necessary columns [above](#cell-table-format), as well as any other columns from the cell table containing features or metadata you would like to include 
+* `cell_data_cols`: list including the necessary columns [above](#cell-table-format), as well as any other columns from the table containing cell level features you would like to include 
 
 ```commandline
 # define column groupings
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment', 'compartment_area', 'area', 'cell_size', 'Tissue_ID', 'Patient_ID',
-                  'Timepoint', 'Localization']
+                  'compartment', 'compartment_area', 'area', 'cell_size']
 ```
 
 Step 3: Create the anndata object and save.
@@ -150,10 +146,7 @@ adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad
 Once we have the appropriate input, we can set the required parameters and generate some features!
 
 The required variables are:
-* `image_key`: column name in .obs which denotes the image name
-* `seg_label_key`: column name in .obs which denotes the cell segmentation label
-* `cell_area_key`: column name in .obs which denotes the cell area
-* `cluster_key`: list of column names in .obs containing the various cell assignments
+* `image_key`, `seg_label_key`, `cell_area_key`,  `cluster_key` as described [above](#cell-table-format)
 * `functional_feature_level`: which of the cluster levels to generate functional features for
 
 Optional variables are:
@@ -194,13 +187,27 @@ adata_processed.uns['feature_metadata'].to_csv(os.path.join(data_dir, 'SpaceCat'
 adata_processed.uns['excluded_features'].to_csv(os.path.join(data_dir, 'SpaceCat', 'excluded_features.csv'), index=False)
 ```
 
+### Adding Metadata
+If you would like to merge your metadata into any of the above tables, you can do so using the shared image key
+```commandline
+metadata = pd.read_csv(os.path.join(data_dir, 'metadata.csv'))
+features_filtered = pd.read_csv(os.path.join(data_dir, 'SpaceCat', 'combined_feature_data_filtered.csv'))
+
+# merge metadata into output table
+merge_table = pd.merge(features_filtered, metadata, on=['fov'])
+```
+
+You can also add the metadata in your anndata object and save with
+```commandline
+adata_processed.uns['metadata'] = metadata
+adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
+```
+
 ### Feature Descriptions
 All features are computed separately in each image. In addition, if you provided optional compartment assignments, the features will also be computed within each compartment.
 - `density`: The number of cells divided by the area of the region.
 - `density_ratio`: The ratio between the densities of cell types.
-  - Using a minimum density threshold for ratios, if both cell densities were below the threshold, the ratio for that image was not calculated.
 - `functional_marker`: For each cell type/functional marker combination, the proportion of cells positive for that marker, using the supplied marker-specific thresholds to determine positivity.
-  - Marker frequencies were not computed for regions with fewer than a set minimum number of cells.
 
 Coming soon:
 - `cell_diversity`: This diversity feature is based on cell proximity. For each cell in the image, the proportions of each cell type within a specified pixel radius was computed. Then the Shannon diversity index was calculated on these proportions.
