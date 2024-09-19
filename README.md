@@ -195,11 +195,11 @@ adata_processed.uns['excluded_features'].to_csv(os.path.join(data_dir, 'SpaceCat
 ```
 
 ### Feature Descriptions
-Each of the features are computed at two region levels, image-wide and within individual compartments (if specified).
+All features are computed separately in each image. In addition, if you provided optional compartment assignments, the features will also be computed within each compartment.
 - `density`: The number of cells divided by the area of the region.
 - `density_ratio`: The ratio between the densities of cell types.
   - Using a minimum density threshold for ratios, if both cell densities were below the threshold, the ratio for that image was not calculated.
-- `functional_marker`: For each cell type/functional marker combination, the proportion of cells above the marker-specific threshold was calculated.
+- `functional_marker`: For each cell type/functional marker combination, the proportion of cells positive for that marker, using the supplied marker-specific thresholds to determine positivity.
   - Marker frequencies were not computed for regions with fewer than a set minimum number of cells.
 
 Coming soon:
