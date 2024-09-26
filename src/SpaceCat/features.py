@@ -271,6 +271,28 @@ class SpaceCat:
                 # add to final dfs list
                 self.feature_data_list.append(compartment_df_formatted)
 
+    def add_feature_metadata(self, panda_series, metric, compartment_col=False):
+        """ Adds metadata columns to per cell stats aggregated at a higher level.
+        Args:
+            panda_series (pd.Series): contains the data aggregated per image
+            metric (str): name of the level at which data was calculated
+            compartment_col (bool): whether done within compartments within the image
+        Returns:
+            pd.DataFrame:
+                table with appropriate metadata columns appended
+        """
+        df = pd.DataFrame(panda_series)
+        df.columns = ['value']
+        df.reset_index(inplace=True)
+        df['metric'] = metric
+        df['cell_type'] = 'all'
+        if compartment_col:
+            df.rename(columns={self.compartment_key: 'subset'}, inplace=True)
+        else:
+            df['subset'] = 'all'
+
+        return df
+
     ## FEATURE GENERATION FUNCTIONS ##
     def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, compartment_area_df,
                                exclude_missing_compartments=True):
@@ -290,7 +312,8 @@ class SpaceCat:
         subset_col = None if self.compartment_key_none else self.compartment_key
 
         cluster_dfs = []
-        for result_name, cluster_col_name, normalize in cluster_df_params:
+        for result_name, cluster_col_name in cluster_df_params:
+            normalize = True if '_freq' in result_name else False
             drop_cols = []
             # remove cluster_names except for the one specified for the df
             cluster_names = self.cluster_key.copy()
@@ -306,37 +329,24 @@ class SpaceCat:
                                                    normalize=normalize,
                                                    drop_cols=drop_cols))
 
-        def add_feature_metadata(panda_series, metric, compartment_col=False):
-            df = pd.DataFrame(panda_series)
-            df.columns = ['value']
-            df.reset_index(inplace=True)
-            df['metric'] = metric
-            df['cell_type'] = 'all'
-            if compartment_col:
-                df.rename(columns={self.compartment_key: 'subset'}, inplace=True)
-            else:
-                df['subset'] = 'all'
-
-            return df
-
         # calculate total number of cells per image
         grouped_cell_counts = cell_table_clusters[[self.image_key]].groupby(
             self.image_key, observed=True).value_counts()
-        grouped_cell_counts = add_feature_metadata(grouped_cell_counts, metric='total_cell_count')
+        grouped_cell_counts = self.add_feature_metadata(grouped_cell_counts, metric='total_cell_count')
         total_stats = [grouped_cell_counts]
 
         if not self.compartment_key_none:
             # calculate total number of cells per region per image
             grouped_cell_counts_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
                 groupby([self.image_key, self.compartment_key], observed=True).value_counts()
-            grouped_cell_counts_region = add_feature_metadata(
+            grouped_cell_counts_region = self.add_feature_metadata(
                 grouped_cell_counts_region, metric='total_cell_count', compartment_col=True)
 
             # calculate proportions of cells per region per image
             grouped_cell_freq_region = cell_table_clusters[[self.image_key, self.compartment_key]].\
                 groupby([self.image_key], observed=True)[self.compartment_key].\
                 value_counts(normalize=True)
-            grouped_cell_freq_region = add_feature_metadata(
+            grouped_cell_freq_region = self.add_feature_metadata(
                 grouped_cell_freq_region, metric='total_cell_freq', compartment_col=True)
 
             total_stats.extend([grouped_cell_counts_region, grouped_cell_freq_region])
@@ -424,7 +434,8 @@ class SpaceCat:
         subset_col = None if self.compartment_key_none else self.compartment_key
 
         stats_dfs = []
-        for result_name, cluster_col_name, normalize in params:
+        for result_name, cluster_col_name in params:
+            normalize = True if '_freq' in result_name else False
             drop_cols = [self.seg_label_key]
             cluster_names = self.cluster_key.copy()
             cluster_names.remove(cluster_col_name)
@@ -438,15 +449,86 @@ class SpaceCat:
                                                  normalize=normalize,
                                                  subset_col=subset_col))
         stats_df_comb = pd.concat(stats_dfs, axis=0)
+        stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
         self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
 
-        if df_name == 'functional_stats':
+        if df_name == 'functional_marker_stats':
             self.filter_functional_features(table, stats_df_comb, filter_stats, deduplicate_stats)
         else:
             if filter_stats:
                 # filter stats by minimum cell count
                 cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
                 self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df
+
+    def generate_per_cell_stats(self, cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats):
+        """ Wrapper function to generate per cell features.
+        Args:
+            cell_table_clusters (pd.DataFrame): table containing per cell data
+            per_cell_stats (list): list containing lists of per cell stats parameters
+            filter_stats (bool): whether to filter features by minimum cell count
+            deduplicate_stats (bool): whether to deduplicate highly correlated features
+        Returns:
+            generates and saves feature dataframe, as well as the filtered dataframe
+        """
+        # generate misc per cell features
+        if per_cell_stats:
+            for stat_specs in per_cell_stats:
+                stat_name, stat_cluster_level, stat_columns = stat_specs[0], stat_specs[1], stat_specs[2]
+                stat_params = [[stat_cluster_level + '_freq', stat_cluster_level]]
+
+                if stat_name == 'functional_marker':
+                    cell_table_stats = pd.concat(
+                        [cell_table_clusters, self.adata_table[:, [col for col in self.adata_table.var_names
+                                                                   if '+' in col]].to_df()], axis=1)
+                else:
+                    cell_table_stats = pd.concat(
+                        [cell_table_clusters, self.adata_table.obs[stat_columns]], axis=1)
+
+                self.generate_stats(cell_table_stats, params=stat_params, df_name=stat_name + '_stats',
+                                    var_name=stat_name, filter_stats=filter_stats,
+                                    deduplicate_stats=deduplicate_stats)
+
+                # aggregate stats per image
+                if stat_name != 'functional_marker':
+                    df_name = stat_name + '_stats'
+                    img_df = self.adata_table.uns[df_name][[self.image_key, 'value', stat_name]].groupby(
+                        by=[self.image_key, stat_name], observed=True).mean()
+                    img_df = self.add_feature_metadata(img_df, metric='total_freq')
+                    self.adata_table.uns[df_name] = pd.concat([self.adata_table.uns[df_name], img_df])
+
+                    if filter_stats or deduplicate_stats:
+                        self.adata_table.uns[df_name + '_filtered'] = pd.concat(
+                            [self.adata_table.uns[df_name + '_filtered'], img_df])
+
+                # format features
+                df_name = stat_name + '_stats_filtered' if filter_stats or deduplicate_stats else stat_name + '_stats'
+                stat_params.append(['total_freq', 'all'])
+                self.format_computed_features(self.adata_table.uns[df_name], stat_name, stat_params)
+
+    def generate_per_img_stats(self, per_img_stats):
+        """ Wrapper function to generate per image features.
+        Args:
+            per_img_stats (list): list containing lists of per image stats parameters
+        Returns:
+            generates and saves feature dataframe, as well as the filtered dataframe
+        """
+        if per_img_stats:
+            for stat_specs in per_img_stats:
+                stat_name, stat_df = stat_specs[0], stat_specs[1]
+                df_name = stat_name + '_stats'
+
+                # create longform df
+                img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
+                img_stats_long['feature_name'] = stat_name + '__' + img_stats_long[stat_name]
+
+                # remove nan and inf values
+                img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
+
+                self.adata_table.uns[df_name] = img_stats_long
+
+                # format features
+                self.format_helper(img_stats_long, compartment='all', cell_pop_level=np.nan, feature_type=stat_name)
+                self.feature_data_list.append(img_stats_long)
 
     def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.1):
         """  A function to filter out features that are highly correlated in compartments.
@@ -555,11 +637,13 @@ class SpaceCat:
         self.feature_metadata = feature_metadata
         self.adata_table.uns['feature_metadata'] = feature_metadata
 
-    def run_spacecat(self, functional_feature_level, filter_stats=True, deduplicate_stats=True,
-                     correlation_filtering_thresh=0.7):
+    def run_spacecat(self, functional_feature_level, per_cell_stats=[], per_img_stats=[],
+                     filter_stats=True, deduplicate_stats=True, correlation_filtering_thresh=0.7):
         """ Main function to calculate all cell stats and generate the final feature table.
         Args:
             functional_feature_level (str): clustering level to check all functional marker positivities against
+            per_cell_stats (list): list containing lists of per cell stats parameters
+            per_img_stats (list): list containing lists of per image stats parameters
             filter_stats (bool): whether to filter features by minimum cell count
             deduplicate_stats (bool): whether to deduplicate highly correlated features
             correlation_filtering_thresh (float): the correlation threshold for final feature filtering
@@ -569,12 +653,15 @@ class SpaceCat:
         """
         # validation checks
         verify_in_list(marker_positivity_level=functional_feature_level, all_cluster_levels=self.cluster_key)
+        for stat_specs in per_cell_stats:
+            verify_in_list(per_cell_feature_level=stat_specs[1], all_cluster_levels=self.cluster_key)
+            verify_in_list(per_cell_feature_columns=stat_specs[2], cell_table_columns=self.adata_table.obs.columns)
 
         # Generate counts and proportions of cell clusters per FOV
         cluster_params = []
         for column in self.cluster_key:
-            cluster_params.append([column + '_freq', column, True])
-            cluster_params.append([column + '_count', column, False])
+            cluster_params.append([column + '_freq', column])
+            cluster_params.append([column + '_count', column])
 
         # subset table for cluster data
         compartment_col = [] if self.compartment_key_none else [self.compartment_key]
@@ -600,24 +687,14 @@ class SpaceCat:
         # generate abundance features
         self.generate_abundance_features(stats_df, density_params, ratio_cluster_key=broadest_cluster_col)
 
-        # generate functional features
-        # Create summary dataframe with proportions and counts of different functional marker populations
-        cell_table_func = pd.concat(
-            [cell_table_clusters, self.adata_table[:, [col for col in self.adata_table.var_names
-                                                       if '+' in col]].to_df()], axis=1)
-        self.generate_stats(cell_table_func, params=cluster_params, df_name='functional_stats',
-                            var_name='functional_marker', filter_stats=filter_stats,
-                            deduplicate_stats=deduplicate_stats)
+        # add functional features to list
+        per_cell_stats.append(['functional_marker', functional_feature_level, None])
 
-        # format previous features
-        df_name = 'functional_stats_filtered' if filter_stats or deduplicate_stats else 'functional_stats'
-        feature_set = [[self.adata_table.uns[df_name], 'functional_marker']]
-        # TO DO: add functional morphology features, etc.
+        # generate misc per cell features
+        self.generate_per_cell_stats(cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats)
 
-        # only include functional marker features at the specified level, as well as total features
-        metrics = [[f'{functional_feature_level}_freq', functional_feature_level], ['total_freq', 'all']]
-        for stats_df, col_name in feature_set:
-            self.format_computed_features(stats_df, col_name, metrics)
+        # generate per image features
+        self.generate_per_img_stats(per_img_stats)
 
         # combine into full feature df
         self.combine_features(correlation_filtering_thresh)
@@ -697,12 +774,12 @@ class SpaceCat:
             filtered_df = pd.concat([single_positive_df, double_positive_df]).reset_index(drop=True)
 
             total_df = filtered_df
-            self.adata_table.uns['functional_stats_filtered'] = total_df
+            self.adata_table.uns['functional_marker_stats_filtered'] = total_df
 
         if deduplicate_stats:
             # remove highly related stats
             total_df = self.deduplicate_functional_stats(total_df).reset_index(drop=True)
-            self.adata_table.uns['functional_stats_filtered'] = total_df
+            self.adata_table.uns['functional_marker_stats_filtered'] = total_df
 
         # total freq stats
         marker_df = cell_filtered_df if filter_stats else stats_df
@@ -721,10 +798,11 @@ class SpaceCat:
         # save to filtered df or full df
         total_df = pd.concat([total_df, long_df]).reset_index(drop=True)
         if filter_stats or deduplicate_stats:
-            self.adata_table.uns['functional_stats_filtered'] = total_df
-            self.adata_table.uns['functional_stats'] = pd.concat([self.adata_table.uns['functional_stats'], long_df])
+            self.adata_table.uns['functional_marker_stats_filtered'] = total_df
+            self.adata_table.uns['functional_marker_stats'] = pd.concat(
+                [self.adata_table.uns['functional_marker_stats'], long_df])
         else:
-            self.adata_table.uns['functional_stats'] = total_df
+            self.adata_table.uns['functional_marker_stats'] = total_df
 
         return total_df
 
