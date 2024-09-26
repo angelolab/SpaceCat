@@ -656,6 +656,8 @@ class SpaceCat:
         for stat_specs in per_cell_stats:
             verify_in_list(per_cell_feature_level=stat_specs[1], all_cluster_levels=self.cluster_key)
             verify_in_list(per_cell_feature_columns=stat_specs[2], cell_table_columns=self.adata_table.obs.columns)
+        for stat_specs in per_img_stats:
+            verify_in_list(image_key_name=self.image_key, per_img_feature_columns=stat_specs[1])
 
         # Generate counts and proportions of cell clusters per FOV
         cluster_params = []
