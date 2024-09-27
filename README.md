@@ -153,11 +153,11 @@ Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
 * `compartment_area_key`: column name in .obs which stores the compartment areas
 * `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
-  * 1: the metric name you would like to give the feature type, in the example below: `'morphology'`
+  * 1: the category name you would like to give the set of features, in the example below: `'morphology'`
   * 2: the cell cluster level to calculate this statistic at, in the example below: `'cell_cluster'`
   * 3: the list of columns in the cell table for each statistic you would like to include, in the example below: `['area', 'major_axis_length']`
 * `per_img_stats`: list of specifications so SpaceCat can include any additional image level features,  there are 2 required inputs for each image stat list:
-  * 1: the metric name you would like to give the feature type, in the example below: `'fiber'` or `'mixing_score'`
+  * 1: the category name you would like to give the set of features, in the example below: `'fiber'` or `'mixing_score'`
   * 2: the dataframe containing the image level stats, one column must be the `image_key`,  while the other columns will indicate individual feature names to be included
 
 When provided with compartment information, SpaceCat will calculate region specific features for your data, as well as at the image level.
