@@ -152,25 +152,46 @@ The required variables are:
 Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
 * `compartment_area_key`: column name in .obs which stores the compartment areas
+* `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
+  * 1: the category name you would like to give the set of features, in the example below: `'morphology'`
+  * 2: the cell cluster level to calculate this statistic at, in the example below: `'cell_cluster'`
+  * 3: the list of columns in the cell table for each statistic you would like to include, in the example below: `['area', 'major_axis_length']`
+* `per_img_stats`: list of specifications so SpaceCat can include any additional image level features,  there are 2 required inputs for each image stat list:
+  * 1: the category name you would like to give the set of features, in the example below: `'fiber'` or `'mixing_score'`
+  * 2: the dataframe containing the image level stats, one column must be the `image_key`,  while the other columns will indicate individual feature names to be included
 
 When provided with compartment information, SpaceCat will calculate region specific features for your data, as well as at the image level.
 We are currently working on preprocessing functions to assign cells to compartment regions either using pre-existing masks as input, or by generating custom masks here.
 
 **If you do not have compartment assignments and areas for each cell, set both of these variables to `None` to direct
-SpaceCat to compute only the image level features.**
+SpaceCat to compute only the image level features. If you do not have an additional cell or image stats exclude them from the `run_spacecat()` function call.**
 ```commandline
 from SpaceCat.features import SpaceCat
 
-# Initialize class
+# Initialize the class
 adata_processed = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 
 features = SpaceCat(adata_processed, image_key='fov', seg_label_key='label', cell_area_key='area',
                     cluster_key=['cell_cluster', 'cell_cluster_broad'], 
                     compartment_key='compartment', compartment_area_key='compartment_area')
+```
+```commandline
+# read in image level dataframes
+fiber_df = pd.read_csv(os.path.join(data_dir, 'fiber_stats_table.csv'))
+mixing_df = pd.read_csv(os.path.join(data_dir, 'mixing_scores.csv'))
 
+# specify addtional per cell and per image stats
+per_cell_stats=[
+    ['morphology', 'cell_cluster', ['area', 'major_axis_length']]
+]
+per_img_stats=[
+    ['fiber', fiber_df], 
+    ['mixing_score', mixing_df]
+]
 
 # Generate features and save anndata
-adata_processed = features.run_spacecat(functional_feature_level='cell_cluster')
+adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', 
+                                        per_cell_stats=per_cell_stats, per_img_stats=per_img_stats)
 
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
