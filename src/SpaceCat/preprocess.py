@@ -102,9 +102,4 @@ def preprocess_table(adata_table, threshold_list):
     # add functional marker positivity data
     adata_new = create_functional_tables(adata_table, threshold_list)
 
-    ## TO DO ##
-    # generate distance matrices
-
-    # generate neighborhood matrices
-
     return adata_new
