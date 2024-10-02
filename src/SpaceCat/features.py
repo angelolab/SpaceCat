@@ -515,11 +515,8 @@ class SpaceCat:
         """
         # add image and cell type information
         neighborhood_mat = self.adata_table.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"]
-        neighborhood_mat = neighborhood_mat.reset_index().rename(columns={'index': self.seg_label_key})
-        neighborhood_mat[self.seg_label_key] = neighborhood_mat[self.seg_label_key].astype(int)
-        neighborhood_mat = neighborhood_mat.merge(
-            self.adata_table.obs[[self.image_key, self.seg_label_key, diversity_feature_level]],
-            on=[self.seg_label_key])
+        neighborhood_mat = neighborhood_mat.join(
+            self.adata_table.obs[[self.image_key, self.seg_label_key, diversity_feature_level]])
 
         diversity_data = []
         fov_list = np.unique(neighborhood_mat[self.image_key])
@@ -562,7 +559,9 @@ class SpaceCat:
             generates and saves feature dataframe, as well as the filtered dataframe
         """
         # create neighbor counts and frequencies matrix
-        self.create_neighborhood_matrix(diversity_feature_level, pixel_radius)
+        if f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}" not in \
+                self.adata_table.obsm_keys():
+            self.create_neighborhood_matrix(diversity_feature_level, pixel_radius)
 
         # calculate Shannon diversity per cell
         cell_diversity_table = self.compute_neighborhood_diversity(diversity_feature_level, pixel_radius)
