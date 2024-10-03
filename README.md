@@ -148,6 +148,8 @@ Once we have the appropriate input, we can set the required parameters and gener
 The required variables are:
 * `image_key`, `seg_label_key`, `cell_area_key`,  `cluster_key` as described [above](#cell-table-format)
 * `functional_feature_level`: which of the cluster levels to generate functional features for
+* `diversity_feature_level`: which of the cluster levels to generate cell diversity features for
+* `pixel_radius`: radius in pixels which will be used to define the neighbors of each cell, for the example data 50 pixels (~20 microns) is used
 
 Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
@@ -190,7 +192,7 @@ per_img_stats=[
 ]
 
 # Generate features and save anndata
-adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', 
+adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', diversity_feature_level='cell_cluster', pixel_radius = 50,
                                         per_cell_stats=per_cell_stats, per_img_stats=per_img_stats)
 
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))

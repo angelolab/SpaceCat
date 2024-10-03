@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import squidpy as sq
 
 from itertools import combinations
 from scipy.stats import spearmanr
@@ -460,6 +461,120 @@ class SpaceCat:
                 cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
                 self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df
 
+    def create_neighborhood_matrix(self, diversity_feature_level, pixel_radius):
+        """ Checks the distances between cells in an image and creates a neighborhood matrix.
+        Args:
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
+        Returns:
+            generates and saves the neighbors counts and frequencies
+        """
+        # create a graph from cell centroids
+        adata = self.adata_table
+        sq.gr.spatial_neighbors(adata, spatial_key='spatial', library_key=self.image_key,
+                                radius=pixel_radius, coord_type='generic')
+
+        # extract cell neighbors by specified cluster level
+        count_list = []
+        for i, name in enumerate(adata.obs_names):
+            row, col = adata.obsp['spatial_connectivities'][i, :].nonzero()
+            count = adata.obs[diversity_feature_level].iloc[col].value_counts()
+            count_list.append(count)
+
+        # create counts and frequencies matrices
+        neighborhood_counts = pd.DataFrame(count_list, index=adata.obs_names)
+        neighborhood_counts.fillna(0, inplace=True)
+        neighborhood_freqs = neighborhood_counts.div(neighborhood_counts.sum(axis=1), axis=0)
+
+        # save neighbors matrices to the adata
+        adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts
+        adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs
+        self.adata_table = adata
+
+    def shannon_diversity(self, proportions):
+        """ Calculates the shannon diversity index for the provided proportions of a community
+        Args:
+            proportions (np.array): the proportions of each individual group
+
+        Returns:
+            float:
+                the diversity of neighborhood
+        """
+
+        prop_index = proportions > 0
+        return -np.sum(proportions[prop_index] * np.log2(proportions[prop_index]))
+
+    def compute_neighborhood_diversity(self, diversity_feature_level, pixel_radius):
+        """ Computes the diversity score for each cell in the dataset
+        Args:
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
+        Returns:
+            pd.DataFrame:
+                table with diversity score for each cell
+        """
+        # add image and cell type information
+        neighborhood_mat = self.adata_table.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"]
+        neighborhood_mat = pd.concat(
+            [neighborhood_mat,
+             self.adata_table.obs.loc[:, [self.image_key, self.seg_label_key, diversity_feature_level]]], axis=1)
+
+        diversity_data = []
+        fov_list = np.unique(neighborhood_mat[self.image_key])
+        for fov in fov_list:
+            fov_neighborhoods = neighborhood_mat[neighborhood_mat[self.image_key] == fov]
+
+            diversity_scores = []
+            cells = fov_neighborhoods[self.seg_label_key]
+            for label in cells:
+                # retrieve an array of only the neighbor frequencies for the cell
+                neighbor_freqs = \
+                    fov_neighborhoods[fov_neighborhoods[self.seg_label_key] == label].drop(
+                        columns=[self.image_key, self.seg_label_key, diversity_feature_level]).values[0]
+
+                diversity_scores.append(self.shannon_diversity(neighbor_freqs))
+
+            # combine the data for cells in the image
+            fov_data = pd.DataFrame({
+                self.image_key: [fov] * len(cells),
+                self.seg_label_key: cells,
+                f'diversity_{diversity_feature_level}': diversity_scores
+            })
+            diversity_data.append(fov_data)
+
+        # dataframe containing all images
+        diversity_data = pd.concat(diversity_data)
+        diversity_data = diversity_data.merge(
+            self.adata_table.obs[[self.image_key, self.seg_label_key, self.compartment_key] + self.cluster_key],
+            on=[self.image_key, self.seg_label_key])
+
+        return diversity_data
+
+    def generate_diversity_features(self, diversity_feature_level, pixel_radius, filter_stats):
+        """ Wrapper function to generate per cell features.
+        Args:
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
+            filter_stats (bool): whether to filter features by minimum cell count
+        Returns:
+            generates and saves feature dataframe, as well as the filtered dataframe
+        """
+        # create neighbor counts and frequencies matrix
+        if f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}" not in \
+                self.adata_table.obsm_keys():
+            self.create_neighborhood_matrix(diversity_feature_level, pixel_radius)
+
+        # calculate Shannon diversity per cell
+        cell_diversity_table = self.compute_neighborhood_diversity(diversity_feature_level, pixel_radius)
+
+        params = [[diversity_feature_level + '_freq', diversity_feature_level]]
+        self.generate_stats(cell_diversity_table, params, 'diversity_stats', 'cell_diversity',
+                            filter_stats=filter_stats, deduplicate_stats=False)
+
+        # format features
+        df_name = 'diversity_stats_filtered' if filter_stats else 'diversity_stats'
+        self.format_computed_features(self.adata_table.uns[df_name], 'cell_diversity', params)
+
     def generate_per_cell_stats(self, cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats):
         """ Wrapper function to generate per cell features.
         Args:
@@ -637,11 +752,14 @@ class SpaceCat:
         self.feature_metadata = feature_metadata
         self.adata_table.uns['feature_metadata'] = feature_metadata
 
-    def run_spacecat(self, functional_feature_level, per_cell_stats=[], per_img_stats=[],
+    def run_spacecat(self, functional_feature_level, diversity_feature_level, pixel_radius,
+                     per_cell_stats=[], per_img_stats=[],
                      filter_stats=True, deduplicate_stats=True, correlation_filtering_thresh=0.7):
         """ Main function to calculate all cell stats and generate the final feature table.
         Args:
             functional_feature_level (str): clustering level to check all functional marker positivities against
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
             per_cell_stats (list): list containing lists of per cell stats parameters
             per_img_stats (list): list containing lists of per image stats parameters
             filter_stats (bool): whether to filter features by minimum cell count
@@ -688,6 +806,9 @@ class SpaceCat:
 
         # generate abundance features
         self.generate_abundance_features(stats_df, density_params, ratio_cluster_key=broadest_cluster_col)
+
+        # generate diversity features
+        self.generate_diversity_features(diversity_feature_level, pixel_radius, filter_stats)
 
         # add functional features to list
         per_cell_stats.append(['functional_marker', functional_feature_level, None])
