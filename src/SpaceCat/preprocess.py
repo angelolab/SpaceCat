@@ -1,10 +1,14 @@
 import anndata
 import scipy
+import os
 import numpy as np
 import pandas as pd
+import skimage.io as io
 
 from itertools import combinations
 from alpineer.misc_utils import verify_in_list
+from alpineer import io_utils
+from ark.segmentation import marker_quantification
 
 pd.set_option("future.no_silent_downcasting", True)
 
@@ -76,18 +80,120 @@ def create_functional_tables(adata_table, threshold_list):
     return adata_new
 
 
-def preprocess_table(adata_table, threshold_list):
+
+def calculate_compartment_areas(mask_dir, fovs):
+    """Calculate the area of each mask per fov
+
+    Args:
+        mask_dir (str): path to directory containing masks for each fov
+        fovs (list): list of fovs to calculate mask areas for
+
+    Returns
+        pd.DataFrame: dataframe containing the area of each mask per fov
+    """
+    # get list of masks
+    mask_files = io_utils.list_files(os.path.join(mask_dir, fovs[0]))
+    mask_names = [os.path.splitext(os.path.basename(x))[0] for x in mask_files]
+
+    # loop through fovs and masks to calculate area
+    area_dfs = []
+    for fov in fovs:
+        mask_areas = []
+        for mask_file in mask_files:
+            mask = io.imread(os.path.join(mask_dir, fov, mask_file))
+            mask_areas.append(np.sum(mask))
+
+        area_df = pd.DataFrame({'compartment': mask_names, 'compartment_area': mask_areas, 'fov': fov})
+        area_dfs.append(area_df)
+
+    return pd.concat(area_dfs, axis=0)
+
+
+def assign_cells_to_compartment(seg_dir, mask_dir, fovs, seg_mask_substr):
+    """Assign cells an image to the mask they overlap most with
+
+    Args:
+        seg_dir (str): path to segmentation directory
+        mask_dir (str): path to mask directory, with masks for each FOV in a dedicated folder
+        fovs (list): list of fovs to process
+
+    Returns:
+        pandas.DataFrame: dataframe with cell assignments to masks
+    """
+    print(seg_mask_substr)
+
+    # extract counts of each mask per cell
+    normalized_cell_table, _ = marker_quantification.generate_cell_table(
+        segmentation_dir=seg_dir, tiff_dir=mask_dir, fovs=fovs, img_sub_folder='',
+        fast_extraction=True, mask_types=[seg_mask_substr])
+
+    # drop cell_size column
+    normalized_cell_table = normalized_cell_table.drop(columns=['cell_size'])
+
+    # move fov column to front
+    fov_col = normalized_cell_table.pop('fov')
+    normalized_cell_table.insert(0, 'fov', fov_col)
+
+    # remove all columns after label
+    normalized_cell_table = normalized_cell_table.loc[:, :'label']
+
+    # move label column to front
+    label_col = normalized_cell_table.pop('label')
+    normalized_cell_table.insert(1, 'label', label_col)
+
+    # create new column with name of column max for each row
+    normalized_cell_table['compartment'] = normalized_cell_table.iloc[:, 2:].idxmax(axis=1)
+
+    return normalized_cell_table[['fov', 'label', 'compartment']]
+
+
+def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
+    """ Assign cells to compartment based on provided masks.
+    Args:
+        seg_dir (str): path to the directory containing the cell segmentation masks
+        mask_dir (str): path to the directory containing the compartment masks
+
+    Returns:
+        pd.DataFrame:
+            table with the compartment and compartment area data for each cell in each image
+    """
+    fovs = io_utils.list_folders(mask_dir)
+
+    # compute the area of each mask
+    area_df = calculate_compartment_areas(mask_dir, fovs)
+
+    # assign cells to the correct compartment
+    all_assignment_table = pd.DataFrame()
+    for i in range(0, len(fovs), 100):
+        assignment_table = assign_cells_to_compartment(
+            seg_dir, mask_dir, fovs=fovs[i:i + 100], seg_mask_substr=seg_mask_substr)
+        all_assignment_table = pd.concat([all_assignment_table, assignment_table])
+
+    compartment_cell_data = all_assignment_table.merge(area_df, on=['fov', 'compartment'], how='left')
+    compartment_cell_data.to_csv(os.path.join(mask_dir, 'compartment_cell_annotations.csv'), index=False)
+
+    return compartment_cell_data
+
+
+def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_dir=None,
+                     mask_dir=None, seg_mask_substr=['whole_cell']):
     """ Take in a cell table and return a processed table.
     Args:
         adata_table (anndata): cell table containing intensity data for each marker
         threshold_list (list): list of functional markers and their pre-determined thresholds
+        image_key (str): column identifying specific regions of tissue in your data
+        seg_label_key (str): column identifying the segmentation label for each cell in the image
+        seg_dir (str): path to the directory containing the cell segmentation masks
+        mask_dir (str): path to the directory containing compartment masks for the image data
 
     Returns:
         anndata:
             a new anndata table with the relevant information added
     """
-    # check threshold list is subset of adata_table.X columns
+
+    # check threshold list is subset of adata_table.X columns & that provided keys are in .obs
     verify_in_list(provided_thresholds=[x[0] for x in threshold_list], all_markers=adata_table.var_names)
+    verify_in_list(provided_keys=[image_key, seg_label_key], all_keys=adata_table.obs.columns)
 
     # check for sparse .X, convert to dense if necessary
     if isinstance(adata_table.X, scipy.sparse.csr_matrix):
@@ -101,6 +207,24 @@ def preprocess_table(adata_table, threshold_list):
 
     # add functional marker positivity data
     adata_new = create_functional_tables(adata_table, threshold_list)
+
+    # add compartment data
+    if seg_dir and mask_dir:
+        # check if previous compartment assignments exist
+        compartment_cell_data_path = os.path.join(mask_dir, 'compartment_cell_annotations.csv')
+        if os.path.exists(compartment_cell_data_path):
+            compartment_cell_data = pd.read_csv(compartment_cell_data_path)
+        else:
+            # assign each cell to a compartment and calculate compartment areas
+            compartment_cell_data = preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr)
+
+        # rename image and seg label column if needed
+        compartment_cell_data = compartment_cell_data.rename(
+            columns={'fov': image_key, 'label': seg_label_key})
+
+        # append data to .obs
+        adata_table.obs = adata_table.obs.merge(compartment_cell_data, on=[image_key, seg_label_key],
+                                                how='left')
 
     ## TO DO ##
     # generate distance matrices
