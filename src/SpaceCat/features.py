@@ -515,8 +515,9 @@ class SpaceCat:
         """
         # add image and cell type information
         neighborhood_mat = self.adata_table.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"]
-        neighborhood_mat = neighborhood_mat.join(
-            self.adata_table.obs[[self.image_key, self.seg_label_key, diversity_feature_level]])
+        neighborhood_mat = pd.concat(
+            [neighborhood_mat,
+             self.adata_table.obs.loc[:, [self.image_key, self.seg_label_key, diversity_feature_level]]], axis=1)
 
         diversity_data = []
         fov_list = np.unique(neighborhood_mat[self.image_key])
