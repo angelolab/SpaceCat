@@ -1,14 +1,17 @@
 name: spacecat_env
 channels:
   - conda-forge
+  - bioconda
+  - defaults
 dependencies:
-  - python>=3.9
+  - python=3.10
   - pip
+  - anndata
+  - numpy
+  - pandas
+  - scipy
+  - squidpy
   - pip:
-    - anndata
     - alpineer==0.1.12
-    - numpy>=1.24
-    - pandas>=2
-    - scipy
-    - squidpy
+    - ark-analysis==0.7.1
     - .

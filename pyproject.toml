@@ -1,0 +1,42 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling", "hatch-vcs"]
+
+[project]
+name = "SpaceCat"
+dynamic = ["version"]
+description = "Generate a Spatial Catalogue from multiplexed imaging experiments."
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Angelo Lab", email = "theangelolab@gmail.com" }]
+maintainers = [
+    { name = "Noah Frey Greenwald", email = "nfgreen@stanford.edu" },
+    { name = "Cameron Laura Sowers", email = "csowers@stanford.edu" },
+    { name = "Jolene Rank", email = "ranekj@stanford.edu" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+urls.Source = "https://github.com/angelolab/SpaceCat"
+urls.Home-page = "https://github.com/angelolab/SpaceCat"
+dependencies = [
+        'anndata',
+        'alpineer==0.1.12',
+        'ark-analysis==0.7.1',
+        'numpy',
+        'pandas',
+        'scipy',
+        'squidpy'
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/SpaceCat"]
