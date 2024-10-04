@@ -25,6 +25,8 @@ If you want to test out our tool, you can quickly run SpaceCat using the code be
   - [metadata format](#metadata-format)
   - [conversion steps](#conversion-steps)
 - [3. Preprocessing](#preprocessing)
+  - [functional marker positivity](#functional-marker-positivity)
+  - [compartment cell assignment](#compartment-cell-assignment)
 - [4. Feature Generation](#feature-generation)
   - [running SpaceCat](#running-spacecat)
   - [output tables](#output-tables)
@@ -125,19 +127,39 @@ adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 
 ## Preprocessing
 Your single cell data will require some preprocessing before SpaceCat can generate features. 
-This preprocessed anndata output will only need to be generated once and saved.
+This preprocessed anndata output will only need to be generated once and saved. Preprocessing consists of two steps, checking 
+functional marker positivity within cells and assigning each cell to a compartment region based on any provided masks.
 
+### Functional Marker Positivity 
 **You will need to provide appropriate thresholds to indicate whether a cell is positive for each marker. 
 This information will be used to generate functional marker [features](#feature-descriptions) in SpaceCat.**
 ```commandline
 functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002]]
 ```
 
+### Compartment Cell Assignment
+Provided compartment masks must be individual binary tiffs per compartment, with the file name indicating the compartment
+name you would like to use for feature generation; example compartment masks can be found in [data/compartment_masks](https://github.com/angelolab/SpaceCat/tree/main/data/compartment_masks). 
+You can use the [Generalized Masking script](https://github.com/angelolab/ark-analysis/blob/main/templates/Generalized_Masking.ipynb) in ark-analysis to create channel and/or cell masks for your data. 
+We recommend you perform additional processing to ensure your compartment masks do not overlap.
+
+The required variables are:
+* `image_key`, `seg_label_key` as described [above](#cell-table-format)
+* `seg_dir`: the directory where the segmentation masks for each image are stored
+* `mask_dir`: the directory where the various compartment masks are stored in a single folder for each image
+* `seg_mask_substr`: the substring indicating the file is a segmentation mask, in the example data note the files are 
+of the form 'TONIC_TMA4_R9C6_whole_cell.tiff', where 'whole_cell' is the `seg_mask_substr`
+
+**If you do not have compartment masks set the `seg_dir` and `mask_dir` variables to `None`, so cell to 
+compartment assignment can be skipped.**
+
 Then, you can run the preprocessing function and save the resulting anndata.
 ```commandline
 from SpaceCat.preprocess import preprocess_table
 
-adata_processed = preprocess_table(adata, functional_marker_thresholds)
+adata_processed = preprocess_table(adata, functional_marker_thresholds, image_key='fov', 
+                                   seg_label_key='label', seg_dir=seg_dir, mask_dir=mask_dir,
+                                   seg_mask_substr='whole_cell')
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 
@@ -152,8 +174,8 @@ The required variables are:
 * `pixel_radius`: radius in pixels which will be used to define the neighbors of each cell, for the example data 50 pixels (~20 microns) is used
 
 Optional variables are:
-* `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
-* `compartment_area_key`: column name in .obs which stores the compartment areas
+* `compartment_key`: column name in .obs which contains cell assignments to various region types in the image, will be 'compartment' if cells were assigned using the preprocessing step
+* `compartment_area_key`: column name in .obs which stores the compartment areas, will be 'compartment_area' if cells were assigned using the preprocessing step
 * `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
   * 1: the category name you would like to give the set of features, in the example below: `'morphology'`
   * 2: the cell cluster level to calculate this statistic at, in the example below: `'cell_cluster'`

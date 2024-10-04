@@ -80,7 +80,6 @@ def create_functional_tables(adata_table, threshold_list):
     return adata_new
 
 
-
 def calculate_compartment_areas(mask_dir, fovs):
     """Calculate the area of each mask per fov
 
@@ -116,11 +115,11 @@ def assign_cells_to_compartment(seg_dir, mask_dir, fovs, seg_mask_substr):
         seg_dir (str): path to segmentation directory
         mask_dir (str): path to mask directory, with masks for each FOV in a dedicated folder
         fovs (list): list of fovs to process
+        seg_mask_substr (str): substr attached to segmentation masks after fov name
 
     Returns:
         pandas.DataFrame: dataframe with cell assignments to masks
     """
-    print(seg_mask_substr)
 
     # extract counts of each mask per cell
     normalized_cell_table, _ = marker_quantification.generate_cell_table(
@@ -152,6 +151,7 @@ def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
     Args:
         seg_dir (str): path to the directory containing the cell segmentation masks
         mask_dir (str): path to the directory containing the compartment masks
+        seg_mask_substr (str): substr attached to segmentation masks after fov name
 
     Returns:
         pd.DataFrame:
@@ -176,7 +176,7 @@ def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
 
 
 def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_dir=None,
-                     mask_dir=None, seg_mask_substr=['whole_cell']):
+                     mask_dir=None, seg_mask_substr='whole_cell'):
     """ Take in a cell table and return a processed table.
     Args:
         adata_table (anndata): cell table containing intensity data for each marker
@@ -185,6 +185,7 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_
         seg_label_key (str): column identifying the segmentation label for each cell in the image
         seg_dir (str): path to the directory containing the cell segmentation masks
         mask_dir (str): path to the directory containing compartment masks for the image data
+        seg_mask_substr (str): substr attached to segmentation masks after fov name
 
     Returns:
         anndata:
@@ -223,12 +224,7 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_
             columns={'fov': image_key, 'label': seg_label_key})
 
         # append data to .obs
-        adata_table.obs = adata_table.obs.merge(compartment_cell_data, on=[image_key, seg_label_key],
-                                                how='left')
-
-    ## TO DO ##
-    # generate distance matrices
-
-    # generate neighborhood matrices
+        adata_new.obs = adata_new.obs.merge(compartment_cell_data, on=[image_key, seg_label_key],
+                                            how='left')
 
     return adata_new
