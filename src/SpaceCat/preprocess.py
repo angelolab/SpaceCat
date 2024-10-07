@@ -100,6 +100,8 @@ def calculate_compartment_areas(mask_dir, fovs):
         mask_areas = []
         for mask_file in mask_files:
             mask = io.imread(os.path.join(mask_dir, fov, mask_file))
+            if not np.all(np.isin(np.unique(mask), np.array([0, 1]))):
+                raise ValueError(f"{mask_file} is not binary. Ensure the mask values are 0 or 1.")
             mask_areas.append(np.sum(mask))
 
         area_df = pd.DataFrame({'compartment': mask_names, 'compartment_area': mask_areas, 'fov': fov})
