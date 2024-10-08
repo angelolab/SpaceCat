@@ -148,7 +148,8 @@ The required variables are:
 * `seg_dir`: the directory where the segmentation masks for each image are stored
 * `mask_dir`: the directory where the various compartment masks are stored in a single folder for each image
 * `seg_mask_substr`: the substring indicating the file is a segmentation mask, in the example data note the files are 
-of the form 'TONIC_TMA4_R9C6_whole_cell.tiff', where 'whole_cell' is the `seg_mask_substr`
+of the form 'TONIC_TMA4_R9C6_whole_cell.tiff', where '_whole_cell' is the `seg_mask_substr`
+  * if your segmentation mask file names are simply the image names and have no suffix, set  `seg_mask_substr=None`
 
 **If you do not have compartment masks set the `seg_dir` and `mask_dir` variables to `None`, so cell to 
 compartment assignment can be skipped.**
@@ -159,7 +160,7 @@ from SpaceCat.preprocess import preprocess_table
 
 adata_processed = preprocess_table(adata, functional_marker_thresholds, image_key='fov', 
                                    seg_label_key='label', seg_dir=seg_dir, mask_dir=mask_dir,
-                                   seg_mask_substr='whole_cell')
+                                   seg_mask_substr='_whole_cell')
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 

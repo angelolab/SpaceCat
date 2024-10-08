@@ -126,7 +126,7 @@ def assign_cells_to_compartment(seg_dir, mask_dir, fovs, seg_mask_substr):
     # extract counts of each mask per cell
     normalized_cell_table, _ = marker_quantification.generate_cell_table(
         segmentation_dir=seg_dir, tiff_dir=mask_dir, fovs=fovs, img_sub_folder='',
-        fast_extraction=True, mask_types=[seg_mask_substr])
+        fast_extraction=True, mask_types=[seg_mask_substr], add_underscore=False)
 
     # drop cell_size column
     normalized_cell_table = normalized_cell_table.drop(columns=['cell_size'])
@@ -178,7 +178,7 @@ def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
 
 
 def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_dir=None,
-                     mask_dir=None, seg_mask_substr='whole_cell'):
+                     mask_dir=None, seg_mask_substr='_whole_cell'):
     """ Take in a cell table and return a processed table.
     Args:
         adata_table (anndata): cell table containing intensity data for each marker
