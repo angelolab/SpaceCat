@@ -6,12 +6,8 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - anndata
-  - numpy
-  - pandas
-  - scipy
-  - squidpy
   - pip:
+    - squidpy
     - alpineer==0.1.12
-    - ark-analysis==0.7.1
+    - ark-analysis==0.7.2
     - .
