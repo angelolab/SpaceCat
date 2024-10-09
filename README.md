@@ -236,12 +236,13 @@ adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad
 ### Feature Descriptions
 All features are computed separately in each image. In addition, if you provided optional compartment assignments, the features will also be computed within each compartment.
 - `density`: The number of cells divided by the area of the region.
-- `density_ratio`: The ratio between the densities of cell types.
+- `density_ratio`: The ratio between the densities of cell types. This is done for every pairwise combination of cells at the broadest level of clustering.
 - `functional_marker`: For each cell type/functional marker combination, the proportion of cells positive for that marker, using the supplied marker-specific thresholds to determine positivity.
-
-Coming soon:
 - `cell_diversity`: This diversity feature is based on cell proximity. For each cell in the image, the proportions of each cell type within a specified pixel radius was computed. Then the Shannon diversity index was calculated on these proportions.
-- `region_diversity`: This diversity feature is based on cell abundance. For the broadest cell cluster level, the proportion of cells of each cell type was extracted. Then the Shannon diversity index was calculated on these proportions.
+- `region_diversity`: This diversity feature is based on cell abundance. For the broadest cell cluster level, the proportion of cells of each lower cell type was extracted. Then the Shannon diversity index was calculated on these proportions.
+  - This feature was computed for cells at a broad level of clustering that were composed of at least two distinct lower cell types.
 - `density_proportion`: For each lower level cell type in a given broader cell type category, the proportion of the number of broader cells that the lower cell type represented was calculated. 
   - This feature was computed for cells at a broad level of clustering that were composed of at least two distinct lower cell types.
+
+Coming soon:
 - `kmeans_cluster`: Using k-means clustering to define cell neighborhoods in each image, we then calculated the proportion of cells belonging to each of the identified clusters across the region.
