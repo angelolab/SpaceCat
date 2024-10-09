@@ -154,6 +154,9 @@ The required variables are:
 Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
 * `compartment_area_key`: column name in .obs which stores the compartment areas
+* `specified_ratios_cluster_key `: the cluster level you wish to compute specific cell ratios for, in the example below: `'cell_cluster'`
+  * ratios are already calculated across all pairwise combinations of your most broad cell cluster, this is an optional additional ratio specification
+* `specified_ratios`: a list of cell type pairs to compute ratios for, all specified cell types must belong to the `specified_ratios_cluster_key` classification, see below for an example
 * `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
   * 1: the category name you would like to give the set of features, in the example below: `'morphology'`
   * 2: the cell cluster level to calculate this statistic at, in the example below: `'cell_cluster'`
@@ -182,6 +185,9 @@ features = SpaceCat(adata_processed, image_key='fov', seg_label_key='label', cel
 fiber_df = pd.read_csv(os.path.join(data_dir, 'fiber_stats_table.csv'))
 mixing_df = pd.read_csv(os.path.join(data_dir, 'mixing_scores.csv'))
 
+# specify cell type pairs to compute a ratio for
+ratio_pairings = [('CD8T', 'CD4T'), ('CD4T', 'Treg'), ('CD8T', 'Treg'), ('CD68_Mac', 'CD163_Mac')]
+
 # specify addtional per cell and per image stats
 per_cell_stats=[
     ['morphology', 'cell_cluster', ['area', 'major_axis_length']]
@@ -193,6 +199,7 @@ per_img_stats=[
 
 # Generate features and save anndata
 adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', diversity_feature_level='cell_cluster', pixel_radius = 50,
+                                        specified_ratios_cluster_key='cell_cluster', specified_ratios=ratio_pairings,
                                         per_cell_stats=per_cell_stats, per_img_stats=per_img_stats)
 
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
