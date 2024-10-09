@@ -536,7 +536,7 @@ class SpaceCat:
             diversity_params.append([broad_cell_type, broad_cell_type + '_freq', intermediate_cluster_col])
         cluster_dfs = []
         for broad_cell_type, result_name, cluster_col_name in diversity_params:
-            if len(cluster_mapping[broad_cell_type]) < 1:
+            if len(cluster_mapping[broad_cell_type]) < 2:
                 continue
 
             drop_cols = []
