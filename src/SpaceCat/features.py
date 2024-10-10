@@ -117,7 +117,7 @@ class SpaceCat:
         if self.compartment_key_none:
             # calculate image wide area by cell area
             cell_area_df = self.adata_table.obs[[self.image_key, self.cell_area_key]]
-            area_df = cell_area_df.groupby(by=[self.image_key]).sum().reset_index()
+            area_df = cell_area_df.groupby(by=[self.image_key], observed=True).sum().reset_index()
             area_df[self.compartment_key] = 'all'
             area_df = area_df.rename(columns={self.cell_area_key: self.compartment_area_key})
         else:
@@ -544,8 +544,9 @@ class SpaceCat:
 
         # dataframe containing all images
         diversity_data = pd.concat(diversity_data)
+        compartment_col = [] if self.compartment_key_none else [self.compartment_key]
         diversity_data = diversity_data.merge(
-            self.adata_table.obs[[self.image_key, self.seg_label_key, self.compartment_key] + self.cluster_key],
+            self.adata_table.obs[[self.image_key, self.seg_label_key] + compartment_col + self.cluster_key],
             on=[self.image_key, self.seg_label_key])
 
         return diversity_data
