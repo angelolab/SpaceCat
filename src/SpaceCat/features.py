@@ -10,7 +10,7 @@ from alpineer.misc_utils import verify_in_list
 class SpaceCat:
 
     def __init__(self, adata_table, image_key, seg_label_key, cell_area_key, cluster_key,
-                 compartment_key, compartment_area_key):
+                 compartment_key, compartment_area_key, minimum_density=0.0005):
         self.adata_table = adata_table.copy()
         self.image_key = image_key
         self.seg_label_key = seg_label_key
@@ -22,6 +22,7 @@ class SpaceCat:
         self.compartment_list = list(
             np.unique(adata_table.obs[compartment_key])) if not self.compartment_key_none else []
         self.compartment_list = self.compartment_list + ['all']
+        self.minimum_density = minimum_density
 
         # validation checks
         verify_in_list(provided_columns=[self.image_key, self.seg_label_key],
@@ -459,8 +460,7 @@ class SpaceCat:
         self.adata_table.uns['cluster_stats'] = total_df_clusters
 
     def generate_abundance_features(self, stats_df, density_params, ratio_cluster_key, cluster_mapping,
-                                    intermediate_cluster_col, specified_ratios_cluster_key, specified_ratios,
-                                    minimum_density=0.0005):
+                                    intermediate_cluster_col, specified_ratios_cluster_key, specified_ratios):
         """ Create feature dataframes for cell abundance.
         Args:
             stats_df (pd.DataFrame): table created by generate_cluster_stats() containing density
@@ -471,7 +471,6 @@ class SpaceCat:
             intermediate_cluster_col (str): the cluster level second most broad
             specified_ratios_cluster_key (str): cluster level of cell types in specified_ratios list
             specified_ratios (list): list of tuples, indicating cell types to compute ratios for
-            minimum_density (float): minimum cell density required to generate the feature
 
         Returns:
             saves the abundance feature dataframes to the class
@@ -503,7 +502,7 @@ class SpaceCat:
             cell_types = combinations(cell_types, 2)
 
             self.calculate_ratio_stats(
-                compartment_df, compartment, cell_pop_level, cell_types, minimum_density)
+                compartment_df, compartment, cell_pop_level, cell_types, self.minimum_density)
 
         if specified_ratios_cluster_key:
             # compute ratio of specific cell types at specified cluster level
@@ -514,7 +513,7 @@ class SpaceCat:
                 compartment_df = input_df[input_df.subset == compartment].copy()
 
                 self.calculate_ratio_stats(
-                    compartment_df, compartment, cell_pop_level, specified_ratios, minimum_density)
+                    compartment_df, compartment, cell_pop_level, specified_ratios, self.minimum_density)
 
     def generate_region_diversity_features(self, cell_table_clusters, cluster_mapping,
                                            intermediate_cluster_col, broadest_cluster_col):
