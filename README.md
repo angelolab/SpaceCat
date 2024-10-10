@@ -100,7 +100,7 @@ The required variables are:
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment', 'compartment_area', 'area', 'cell_size']
+                  'compartment_example', 'compartment_area_example', 'area', 'major_axis_length', 'cell_size']
 ```
 
 Step 3: Create the anndata object and save.
