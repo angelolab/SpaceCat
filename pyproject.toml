@@ -28,7 +28,7 @@ urls.Home-page = "https://github.com/angelolab/SpaceCat"
 dependencies = [
         'anndata',
         'alpineer==0.1.12',
-        'ark-analysis==0.7.1',
+        'ark-analysis==0.7.2',
         'numpy',
         'pandas',
         'scipy',
