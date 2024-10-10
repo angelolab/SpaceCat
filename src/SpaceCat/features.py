@@ -10,7 +10,7 @@ from alpineer.misc_utils import verify_in_list
 class SpaceCat:
 
     def __init__(self, adata_table, image_key, seg_label_key, cell_area_key, cluster_key,
-                 compartment_key, compartment_area_key):
+                 compartment_key, compartment_area_key, minimum_density=0.0005):
         self.adata_table = adata_table.copy()
         self.image_key = image_key
         self.seg_label_key = seg_label_key
@@ -22,6 +22,7 @@ class SpaceCat:
         self.compartment_list = list(
             np.unique(adata_table.obs[compartment_key])) if not self.compartment_key_none else []
         self.compartment_list = self.compartment_list + ['all']
+        self.minimum_density = minimum_density
 
         # validation checks
         verify_in_list(provided_columns=[self.image_key, self.seg_label_key],
@@ -117,7 +118,7 @@ class SpaceCat:
         if self.compartment_key_none:
             # calculate image wide area by cell area
             cell_area_df = self.adata_table.obs[[self.image_key, self.cell_area_key]]
-            area_df = cell_area_df.groupby(by=[self.image_key]).sum().reset_index()
+            area_df = cell_area_df.groupby(by=[self.image_key], observed=True).sum().reset_index()
             area_df[self.compartment_key] = 'all'
             area_df = area_df.rename(columns={self.cell_area_key: self.compartment_area_key})
         else:
@@ -294,6 +295,102 @@ class SpaceCat:
 
         return df
 
+    def get_cluster_mapping(self, cell_table_clusters, broadest_cluster_col,
+                            intermediate_cluster_col):
+        """ Create dictionary detailing mapping between two cell cluster levels.
+        Args:
+            cell_table_clusters (pd.DataFrame): the dataframe containing cell classifications
+            broadest_cluster_col (str): the cluster key which has the least number of cell types
+            intermediate_cluster_col (str): the cluster level second most broad
+
+        Returns:
+            dictionary:
+                keys are the broadest cluster cell types, with the values being a list of the
+                intermediate cell types that make up the broad group
+        """
+
+        cluster_mapping = {}
+        for broad_cell in np.unique(cell_table_clusters[broadest_cluster_col]):
+            broad_table_sub = cell_table_clusters[cell_table_clusters[broadest_cluster_col] == broad_cell]
+            intermediate_cells = list(np.unique(broad_table_sub[intermediate_cluster_col]))
+
+            cluster_mapping[broad_cell] = intermediate_cells
+
+        return cluster_mapping
+
+    def calculate_proportion_stats(self, cluster_mapping, intermediate_cluster_col):
+        """ Calculates proportions of cell types within a more broad cluster level.
+        Args:
+            cluster_mapping (dict): mapping between two cell cluster types, used for proportions
+            intermediate_cluster_col (str): the cluster level second most broad
+
+        Returns:
+            appends proportion feature dataframes to feature_data_list
+        """
+        cluster_df = self.adata_table.uns['cluster_stats']
+        input_df = cluster_df[cluster_df.metric == intermediate_cluster_col + '_density'].copy()
+        for compartment in self.compartment_list:
+            compartment_df = input_df[input_df.subset == compartment].copy()
+            for broad_cell_type, cell_types in cluster_mapping.items():
+                if len(cell_types) < 2:
+                    continue
+                # get the total for all cell types
+                cell_type_df = compartment_df[compartment_df.cell_type.isin(cell_types)].copy()
+                grouped_df = cell_type_df[[self.image_key, 'value']].groupby(self.image_key, observed=True) \
+                    .sum().reset_index()
+                grouped_df.columns = [self.image_key, self.image_key + '_sum']
+
+                # normalize each cell type by the total
+                cell_type_df = cell_type_df.merge(grouped_df, on=self.image_key)
+                idx_nonzero = np.where(cell_type_df[self.image_key + '_sum'] != 0)[0]
+                cell_type_df = cell_type_df.iloc[idx_nonzero, :].copy()
+                cell_type_df['value'] = cell_type_df.value / cell_type_df[self.image_key + '_sum']
+
+                cell_type_df['feature_name'] = cell_type_df.cell_type + '__proportion_of__' + broad_cell_type
+
+                cell_type_df_formatted = self.format_helper(
+                    cell_type_df, compartment, intermediate_cluster_col, 'density_proportion')
+
+                # add to final dfs list
+                self.feature_data_list.append(cell_type_df_formatted)
+
+    def calculate_ratio_stats(self, compartment_df, compartment, cell_pop_level, cell_types,
+                              minimum_density):
+        """ Calculates ratios of the two cell types provided, if each population density is
+        greater than the provided minimum.
+        Args:
+            compartment_df (pd.DataFrame): table containing density stats within the compartments
+            compartment (str): name of the current compartment
+            cell_pop_level (str): name of the cluster level
+            cell_types (tuple): string names of two cell types to calculate ratio for
+            minimum_density (float): minimum cell density required to generate the feature
+
+        Returns:
+            appends ratio feature dataframes to feature_data_list
+        """
+        for cell_type1, cell_type2 in cell_types:
+            cell_type1_df = compartment_df[compartment_df.cell_type == cell_type1].copy()
+            cell_type2_df = compartment_df[compartment_df.cell_type == cell_type2].copy()
+
+            # only keep FOVS with at least one cell type over the minimum density
+            cell_type1_mask = cell_type1_df.value > minimum_density
+            cell_type2_mask = cell_type2_df.value > minimum_density
+            cell_mask = cell_type1_mask.values | cell_type2_mask.values
+            cell_type1_df = cell_type1_df[cell_mask]
+            cell_type2_df = cell_type2_df[cell_mask]
+
+            # add minimum density to avoid log2(0)
+            cell_type1_df['ratio'] = np.log2((cell_type1_df.value.values + minimum_density) /
+                                             (cell_type2_df.value.values + minimum_density))
+            cell_type1_df['value'] = cell_type1_df.ratio.values
+            cell_type1_df['feature_name'] = cell_type1 + '__' + cell_type2 + '__ratio'
+
+            cell_type1_df_formatted = self.format_helper(
+                cell_type1_df, compartment, cell_pop_level, feature_type='density_ratio')
+
+            # add to final dfs list
+            self.feature_data_list.append(cell_type1_df_formatted)
+
     ## FEATURE GENERATION FUNCTIONS ##
     def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, compartment_area_df,
                                exclude_missing_compartments=True):
@@ -321,14 +418,10 @@ class SpaceCat:
             cluster_names.remove(cluster_col_name)
             drop_cols.extend(cluster_names)
 
-            cluster_dfs.append(self.create_long_df(table=cell_table_clusters,
-                                                   cluster_col_name=cluster_col_name,
-                                                   result_name=result_name,
-                                                   var_name='cell_type',
-                                                   subset_col=subset_col,
-                                                   cluster_stats=True,
-                                                   normalize=normalize,
-                                                   drop_cols=drop_cols))
+            cluster_dfs.append(self.create_long_df(
+                table=cell_table_clusters, cluster_col_name=cluster_col_name,
+                result_name=result_name, var_name='cell_type', subset_col=subset_col,
+                cluster_stats=True, normalize=normalize, drop_cols=drop_cols))
 
         # calculate total number of cells per image
         grouped_cell_counts = cell_table_clusters[[self.image_key]].groupby(
@@ -366,15 +459,19 @@ class SpaceCat:
 
         self.adata_table.uns['cluster_stats'] = total_df_clusters
 
-    def generate_abundance_features(self, stats_df, density_params, ratio_cluster_key,
-                                    minimum_density=0.0005):
+    def generate_abundance_features(self, stats_df, density_params, ratio_cluster_key, cluster_mapping,
+                                    intermediate_cluster_col, specified_ratios_cluster_key, specified_ratios):
         """ Create feature dataframes for cell abundance.
         Args:
             stats_df (pd.DataFrame): table created by generate_cluster_stats() containing density
                 stats for each cell type
             density_params (list): list of which density features to generate
             ratio_cluster_key (str): cluster level to calculate ratios for
-            minimum_density (float): minimum cell density required to generate the feature
+            cluster_mapping (dict): mapping between two cell cluster types, used for proportions
+            intermediate_cluster_col (str): the cluster level second most broad
+            specified_ratios_cluster_key (str): cluster level of cell types in specified_ratios list
+            specified_ratios (list): list of tuples, indicating cell types to compute ratios for
+
         Returns:
             saves the abundance feature dataframes to the class
         """
@@ -392,33 +489,86 @@ class SpaceCat:
                     compartment_df, compartment, cell_pop_level, feature_type='density')
                 self.feature_data_list.append(compartment_df_formatted)
 
+        # proportion of cells in a given cell type
+        if cluster_mapping:
+            self.calculate_proportion_stats(cluster_mapping, intermediate_cluster_col)
+
         # compute ratio of broad cell type densities
         ratio_cluster_level, cell_pop_level = [f'{ratio_cluster_key}_density', ratio_cluster_key]
         input_df = stats_df[stats_df['metric'].isin([ratio_cluster_level])]
         for compartment in self.compartment_list:
             compartment_df = input_df[input_df.subset == compartment].copy()
             cell_types = compartment_df.cell_type.unique()
+            cell_types = combinations(cell_types, 2)
 
-            for cell_type1, cell_type2 in combinations(cell_types, 2):
-                cell_type1_df = compartment_df[compartment_df.cell_type == cell_type1].copy()
-                cell_type2_df = compartment_df[compartment_df.cell_type == cell_type2].copy()
+            self.calculate_ratio_stats(
+                compartment_df, compartment, cell_pop_level, cell_types, self.minimum_density)
 
-                # only keep FOVS with at least one cell type over the minimum density
-                cell_type1_mask = cell_type1_df.value > minimum_density
-                cell_type2_mask = cell_type2_df.value > minimum_density
-                cell_mask = cell_type1_mask.values | cell_type2_mask.values
-                cell_type1_df = cell_type1_df[cell_mask]
-                cell_type2_df = cell_type2_df[cell_mask]
+        if specified_ratios_cluster_key:
+            # compute ratio of specific cell types at specified cluster level
+            ratio_cluster_level, cell_pop_level = \
+                [f'{specified_ratios_cluster_key}_density', specified_ratios_cluster_key]
+            input_df = stats_df[stats_df['metric'].isin([specified_ratios_cluster_key])]
+            for compartment in self.compartment_list:
+                compartment_df = input_df[input_df.subset == compartment].copy()
 
-                # add minimum density to avoid log2(0)
-                cell_type1_df['ratio'] = np.log2((cell_type1_df.value.values + minimum_density) /
-                                                 (cell_type2_df.value.values + minimum_density))
-                cell_type1_df['value'] = cell_type1_df.ratio.values
-                cell_type1_df['feature_name'] = cell_type1 + '__' + cell_type2 + '__ratio'
+                self.calculate_ratio_stats(
+                    compartment_df, compartment, cell_pop_level, specified_ratios, self.minimum_density)
 
-                cell_type1_df_formatted = self.format_helper(
-                    cell_type1_df, compartment, cell_pop_level, feature_type='density_ratio')
-                self.feature_data_list.append(cell_type1_df_formatted)
+    def generate_region_diversity_features(self, cell_table_clusters, cluster_mapping,
+                                           intermediate_cluster_col, broadest_cluster_col):
+        """ Wrapper function to generate per cell diversity features.
+            Args:
+                cell_table_clusters (pd.DataFrame): table containing per cell data
+                cluster_mapping (dict): mapping between two cell cluster types, used for proportions
+                intermediate_cluster_col (str): the cluster level second most broad
+                broadest_cluster_col (str): the cluster key which has the least number of cell types
+            Returns:
+                appends region diversity feature dataframes to feature_data_list
+        """
+
+        # Diversity of broad cell types using intermediate cell makeup
+        subset_col = None if self.compartment_key_none else self.compartment_key
+
+        diversity_params = []
+        for broad_cell_type in cluster_mapping.keys():
+            diversity_params.append([broad_cell_type, broad_cell_type + '_freq', intermediate_cluster_col])
+        cluster_dfs = []
+        for broad_cell_type, result_name, cluster_col_name in diversity_params:
+            if len(cluster_mapping[broad_cell_type]) < 2:
+                continue
+
+            drop_cols = []
+            # remove cluster_names except for the one specified for the df
+            cluster_names = self.cluster_key.copy()
+            cluster_names.remove(cluster_col_name)
+            drop_cols.extend(cluster_names)
+
+            # only grab cells of specific cell type
+            mask = cell_table_clusters[broadest_cluster_col].isin([broad_cell_type])
+            cluster_dfs.append(self.create_long_df(
+                table=cell_table_clusters.loc[mask, :], cluster_col_name=cluster_col_name,
+                result_name=result_name, var_name='cell_type', subset_col=subset_col,
+                cluster_stats=True, normalize=True, drop_cols=drop_cols))
+
+        # concat dfs into single df
+        total_df_clusters = pd.concat(cluster_dfs, axis=0)
+        self.adata_table.uns['region_diversity_stats'] = total_df_clusters
+
+        for broad_cell_type, cluster_name, intermediate_cluster_col in diversity_params:
+            input_df = total_df_clusters[total_df_clusters['metric'].isin([cluster_name])]
+            for compartment in self.compartment_list:
+                compartment_df = input_df[input_df.subset == compartment].copy()
+                wide_df = pd.pivot(compartment_df, index=self.image_key, columns=['cell_type'], values='value')
+                wide_df['value'] = wide_df.apply(self.shannon_diversity, axis=1)
+                wide_df.reset_index(inplace=True)
+                wide_df['feature_name'] = broad_cell_type + '_diversity'
+
+                cell_type_df_formatted = self.format_helper(
+                    wide_df, compartment, intermediate_cluster_col, 'region_diversity')
+
+                # add to final dfs list
+                self.feature_data_list.append(cell_type_df_formatted)
 
     def generate_stats(self, table, params, df_name, var_name, filter_stats, deduplicate_stats):
         """ Create dataframe containing stats per cell type and compartment.
@@ -429,6 +579,7 @@ class SpaceCat:
             var_name (str): name of the column containing the values
             filter_stats (bool): whether to filter features by minimum cell count
             deduplicate_stats (bool): whether to deduplicate highly correlated features
+
         Returns:
             generates and saves feature dataframe, as well as the filtered dataframe
         """
@@ -442,13 +593,11 @@ class SpaceCat:
             cluster_names.remove(cluster_col_name)
             drop_cols.extend(cluster_names)
 
-            stats_dfs.append(self.create_long_df(table=table,
-                                                 result_name=result_name,
-                                                 var_name=var_name,
-                                                 cluster_col_name=cluster_col_name,
-                                                 drop_cols=drop_cols,
-                                                 normalize=normalize,
-                                                 subset_col=subset_col))
+            stats_dfs.append(self.create_long_df(
+                table=table, result_name=result_name, var_name=var_name,
+                cluster_col_name=cluster_col_name, drop_cols=drop_cols, normalize=normalize,
+                subset_col=subset_col))
+
         stats_df_comb = pd.concat(stats_dfs, axis=0)
         stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
         self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
@@ -544,14 +693,15 @@ class SpaceCat:
 
         # dataframe containing all images
         diversity_data = pd.concat(diversity_data)
+        compartment_col = [] if self.compartment_key_none else [self.compartment_key]
         diversity_data = diversity_data.merge(
-            self.adata_table.obs[[self.image_key, self.seg_label_key, self.compartment_key] + self.cluster_key],
+            self.adata_table.obs[[self.image_key, self.seg_label_key] + compartment_col + self.cluster_key],
             on=[self.image_key, self.seg_label_key])
 
         return diversity_data
 
-    def generate_diversity_features(self, diversity_feature_level, pixel_radius, filter_stats):
-        """ Wrapper function to generate per cell features.
+    def generate_cell_diversity_features(self, diversity_feature_level, pixel_radius, filter_stats):
+        """ Wrapper function to generate per cell diversity features.
         Args:
             diversity_feature_level (str): cluster level to calculate diversity for
             pixel_radius (int): distance from the cell for another cell to be called a neighbor
@@ -568,11 +718,11 @@ class SpaceCat:
         cell_diversity_table = self.compute_neighborhood_diversity(diversity_feature_level, pixel_radius)
 
         params = [[diversity_feature_level + '_freq', diversity_feature_level]]
-        self.generate_stats(cell_diversity_table, params, 'diversity_stats', 'cell_diversity',
+        self.generate_stats(cell_diversity_table, params, 'cell_diversity_stats', 'cell_diversity',
                             filter_stats=filter_stats, deduplicate_stats=False)
 
         # format features
-        df_name = 'diversity_stats_filtered' if filter_stats else 'diversity_stats'
+        df_name = 'cell_diversity_stats_filtered' if filter_stats else 'cell_diversity_stats'
         self.format_computed_features(self.adata_table.uns[df_name], 'cell_diversity', params)
 
     def generate_per_cell_stats(self, cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats):
@@ -643,6 +793,8 @@ class SpaceCat:
 
                 # format features
                 self.format_helper(img_stats_long, compartment='all', cell_pop_level=np.nan, feature_type=stat_name)
+
+                # add to final dfs list
                 self.feature_data_list.append(img_stats_long)
 
     def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.1):
@@ -753,12 +905,14 @@ class SpaceCat:
         self.adata_table.uns['feature_metadata'] = feature_metadata
 
     def run_spacecat(self, functional_feature_level, diversity_feature_level, pixel_radius,
-                     per_cell_stats=[], per_img_stats=[],
+                     specified_ratios_cluster_key=None, specified_ratios=None, per_cell_stats=[], per_img_stats=[],
                      filter_stats=True, deduplicate_stats=True, correlation_filtering_thresh=0.7):
         """ Main function to calculate all cell stats and generate the final feature table.
         Args:
             functional_feature_level (str): clustering level to check all functional marker positivities against
             diversity_feature_level (str): cluster level to calculate diversity for
+            specified_ratios_cluster_key (str): cluster level of cell types in specified_ratios list
+            specified_ratios (list): list of tuples, indicating cell types to compute ratios for
             pixel_radius (int): distance from the cell for another cell to be called a neighbor
             per_cell_stats (list): list containing lists of per cell stats parameters
             per_img_stats (list): list containing lists of per image stats parameters
@@ -771,6 +925,7 @@ class SpaceCat:
         """
         # validation checks
         verify_in_list(marker_positivity_level=functional_feature_level, all_cluster_levels=self.cluster_key)
+        verify_in_list(specified_ratios_cluster_key=specified_ratios_cluster_key, all_cluster_levels=self.cluster_key)
         for stat_specs in per_cell_stats:
             verify_in_list(per_cell_feature_level=stat_specs[1], all_cluster_levels=self.cluster_key)
             verify_in_list(per_cell_feature_columns=stat_specs[2], cell_table_columns=self.adata_table.obs.columns)
@@ -791,24 +946,49 @@ class SpaceCat:
 
         self.generate_cluster_stats(cell_table_clusters, cluster_params, compartment_area_df)
 
+        # verify specified ratio cell pairs are valid
+        try:
+            for cell_pair in specified_ratios:
+                verify_in_list(cell_ratio_pair=list(cell_pair),
+                               cell_types=cell_table_clusters[specified_ratios_cluster_key].unique())
+        except TypeError:
+            raise ValueError("You must specified_ratios cell pairings if providing specified_ratios_cluster_key.")
+        except Exception as e:
+            print(e)
+
         # set density feature parameters
         stats_df = self.adata_table.uns['cluster_stats']
         density_params = []
         for column in self.cluster_key:
             density_params.append([column + '_density', column + '_density', column])
 
-        # determine broadest cluster column (least number of unique cell classifications)
-        broadest_cluster_col = self.cluster_key[0]
+        # determine broadest cluster column (using number of unique cell classifications)
+        cluster_cats = {}
         for col in self.cluster_key:
-            if len(np.unique(cell_table_clusters[col])) < \
-                    len(np.unique(cell_table_clusters[broadest_cluster_col])):
-                broadest_cluster_col = col
+            cluster_cats[len(np.unique(cell_table_clusters[col]))] = col
+        broadest_cluster_col = cluster_cats[min(cluster_cats.keys())]
+        cluster_cats.pop(min(cluster_cats.keys()))
+
+        # get second most broad cluster col and determine mapping between these two cluster levels
+        cluster_mapping = None
+        if len(self.cluster_key) > 1:
+            intermediate_cluster_col = cluster_cats[min(cluster_cats.keys())]
+            cluster_mapping = self.get_cluster_mapping(
+                cell_table_clusters, broadest_cluster_col, intermediate_cluster_col)
 
         # generate abundance features
-        self.generate_abundance_features(stats_df, density_params, ratio_cluster_key=broadest_cluster_col)
+        self.generate_abundance_features(
+            stats_df, density_params, ratio_cluster_key=broadest_cluster_col,
+            cluster_mapping=cluster_mapping, intermediate_cluster_col=intermediate_cluster_col,
+            specified_ratios_cluster_key=specified_ratios_cluster_key, specified_ratios=specified_ratios)
 
-        # generate diversity features
-        self.generate_diversity_features(diversity_feature_level, pixel_radius, filter_stats)
+        # generate cell diversity features
+        self.generate_cell_diversity_features(diversity_feature_level, pixel_radius, filter_stats)
+
+        # generate region diversity features
+        if cluster_mapping:
+            self.generate_region_diversity_features(cell_table_clusters, cluster_mapping,
+                                                    intermediate_cluster_col, broadest_cluster_col)
 
         # add functional features to list
         per_cell_stats.append(['functional_marker', functional_feature_level, None])
