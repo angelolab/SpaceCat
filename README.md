@@ -25,6 +25,8 @@ If you want to test out our tool, you can quickly run SpaceCat using the code be
   - [metadata format](#metadata-format)
   - [conversion steps](#conversion-steps)
 - [3. Preprocessing](#preprocessing)
+  - [functional marker positivity](#functional-marker-positivity)
+  - [compartment cell assignment](#compartment-cell-assignment)
 - [4. Feature Generation](#feature-generation)
   - [running SpaceCat](#running-spacecat)
   - [output tables](#output-tables)
@@ -98,7 +100,7 @@ The required variables are:
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment', 'compartment_area', 'area', 'cell_size']
+                  'compartment_example', 'compartment_area_example', 'area', 'major_axis_length', 'cell_size']
 ```
 
 Step 3: Create the anndata object and save.
@@ -125,19 +127,40 @@ adata = anndata.read_h5ad(os.path.join(data_dir, 'adata', 'adata.h5ad'))
 
 ## Preprocessing
 Your single cell data will require some preprocessing before SpaceCat can generate features. 
-This preprocessed anndata output will only need to be generated once and saved.
+This preprocessed anndata output will only need to be generated once and saved. Preprocessing consists of two steps, checking 
+functional marker positivity within cells and assigning each cell to a compartment region based on any provided masks.
 
+### Functional Marker Positivity 
 **You will need to provide appropriate thresholds to indicate whether a cell is positive for each marker. 
 This information will be used to generate functional marker [features](#feature-descriptions) in SpaceCat.**
 ```commandline
 functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002]]
 ```
 
+### Compartment Cell Assignment
+Provided compartment masks must be individual binary tiffs per compartment, with the file name indicating the compartment
+name you would like to use for feature generation; example compartment masks can be found in [data/compartment_masks](https://github.com/angelolab/SpaceCat/tree/main/data/compartment_masks). 
+You can use the [Generalized Masking script](https://github.com/angelolab/ark-analysis/blob/main/templates/Generalized_Masking.ipynb) in ark-analysis to create channel and/or cell masks for your data. 
+We recommend you perform additional processing to ensure your compartment masks do not overlap.
+
+The required variables are:
+* `image_key`, `seg_label_key` as described [above](#cell-table-format)
+* `seg_dir`: the directory where the segmentation masks for each image are stored
+* `mask_dir`: the directory where the various compartment masks are stored in a single folder for each image
+* `seg_mask_substr`: the substring indicating the file is a segmentation mask, in the example data note the files are 
+of the form 'TONIC_TMA4_R9C6_whole_cell.tiff', where '_whole_cell' is the `seg_mask_substr`
+  * if your segmentation mask file names are simply the image names and have no suffix, set  `seg_mask_substr=None`
+
+**If you do not have compartment masks set the `seg_dir` and `mask_dir` variables to `None`, so cell to 
+compartment assignment can be skipped.**
+
 Then, you can run the preprocessing function and save the resulting anndata.
 ```commandline
 from SpaceCat.preprocess import preprocess_table
 
-adata_processed = preprocess_table(adata, functional_marker_thresholds)
+adata_processed = preprocess_table(adata, functional_marker_thresholds, image_key='fov', 
+                                   seg_label_key='label', seg_dir=seg_dir, mask_dir=mask_dir,
+                                   seg_mask_substr='_whole_cell')
 adata_processed.write_h5ad(os.path.join(data_dir, 'adata', 'adata_processed.h5ad'))
 ```
 
@@ -152,9 +175,9 @@ The required variables are:
 * `pixel_radius`: radius in pixels which will be used to define the neighbors of each cell, for the example data 50 pixels (~20 microns) is used
 
 Optional variables are:
-* `compartment_key`: column name in .obs which contains cell assignments to various region types in the image
-* `compartment_area_key`: column name in .obs which stores the compartment areas
-* `specified_ratios_cluster_key `: the cluster level you wish to compute specific cell ratios for, in the example below: `'cell_cluster'`
+* `compartment_key`: column name in .obs which contains cell assignments to various region types in the image, will be 'compartment' if cells were assigned using the preprocessing step
+* `compartment_area_key`: column name in .obs which stores the compartment areas, will be 'compartment_area' if cells were assigned using the preprocessing step
+* `specified_ratios_cluster_key`: the cluster level you wish to compute specific cell ratios for, in the example below: `'cell_cluster'`
   * ratios are already calculated across all pairwise combinations of your most broad cell cluster, this is an optional additional ratio specification
 * `specified_ratios`: a list of cell type pairs to compute ratios for, all specified cell types must belong to the `specified_ratios_cluster_key` classification, see below for an example
 * `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
@@ -166,10 +189,11 @@ Optional variables are:
   * 2: the dataframe containing the image level stats, one column must be the `image_key`,  while the other columns will indicate individual feature names to be included
 
 When provided with compartment information, SpaceCat will calculate region specific features for your data, as well as at the image level.
-We are currently working on preprocessing functions to assign cells to compartment regions either using pre-existing masks as input, or by generating custom masks here.
 
 **If you do not have compartment assignments and areas for each cell, set both of these variables to `None` to direct
-SpaceCat to compute only the image level features. If you do not have an additional cell or image stats exclude them from the `run_spacecat()` function call.**
+SpaceCat to compute only the image level features.**
+
+**If you do not have an additional `per_cell_stats` or `per_img_stats` then you can exclude these from the `run_spacecat()` function call. You can also exclude the `specified_ratios_cluster_key` and `specified_ratios` variables if you are not interested in this feature.**
 ```commandline
 from SpaceCat.features import SpaceCat
 
