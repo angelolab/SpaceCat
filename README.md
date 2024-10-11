@@ -177,7 +177,7 @@ The required variables are:
 Optional variables are:
 * `compartment_key`: column name in .obs which contains cell assignments to various region types in the image, will be 'compartment' if cells were assigned using the preprocessing step
 * `compartment_area_key`: column name in .obs which stores the compartment areas, will be 'compartment_area' if cells were assigned using the preprocessing step
-* `specified_ratios_cluster_key `: the cluster level you wish to compute specific cell ratios for, in the example below: `'cell_cluster'`
+* `specified_ratios_cluster_key`: the cluster level you wish to compute specific cell ratios for, in the example below: `'cell_cluster'`
   * ratios are already calculated across all pairwise combinations of your most broad cell cluster, this is an optional additional ratio specification
 * `specified_ratios`: a list of cell type pairs to compute ratios for, all specified cell types must belong to the `specified_ratios_cluster_key` classification, see below for an example
 * `per_cell_stats`: list of specifications so SpaceCat can pull additional features from the cell table, there are 3 required inputs for each cell stat list:
@@ -189,10 +189,12 @@ Optional variables are:
   * 2: the dataframe containing the image level stats, one column must be the `image_key`,  while the other columns will indicate individual feature names to be included
 
 When provided with compartment information, SpaceCat will calculate region specific features for your data, as well as at the image level.
-We are currently working on preprocessing functions to assign cells to compartment regions either using pre-existing masks as input, or by generating custom masks here.
 
 **If you do not have compartment assignments and areas for each cell, set both of these variables to `None` to direct
-SpaceCat to compute only the image level features. If you do not have an additional cell or image stats exclude them from the `run_spacecat()` function call.**
+SpaceCat to compute only the image level features.**
+
+**If you do not have an additional `per_cell_stats` or `per_img_stats` then you can exclude these from the `run_spacecat()` function call.  
+You can also exclude the `specified_ratios_cluster_key` and `specified_ratios` variables if you are not interested in this feature.**
 ```commandline
 from SpaceCat.features import SpaceCat
 
