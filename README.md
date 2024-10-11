@@ -193,8 +193,7 @@ When provided with compartment information, SpaceCat will calculate region speci
 **If you do not have compartment assignments and areas for each cell, set both of these variables to `None` to direct
 SpaceCat to compute only the image level features.**
 
-**If you do not have an additional `per_cell_stats` or `per_img_stats` then you can exclude these from the `run_spacecat()` function call.  
-You can also exclude the `specified_ratios_cluster_key` and `specified_ratios` variables if you are not interested in this feature.**
+**If you do not have an additional `per_cell_stats` or `per_img_stats` then you can exclude these from the `run_spacecat()` function call. You can also exclude the `specified_ratios_cluster_key` and `specified_ratios` variables if you are not interested in this feature.**
 ```commandline
 from SpaceCat.features import SpaceCat
 
