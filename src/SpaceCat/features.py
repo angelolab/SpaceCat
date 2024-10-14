@@ -1071,10 +1071,12 @@ class SpaceCat:
 
             # double positive_markers
             dp_markers = [x for x in cell_filtered_df.functional_marker.unique() if '__' in x]
-            double_positive_df = self.subset_functional_markers(cell_filtered_df, dp_markers, prefix='dp',
-                                                                mean_percent_positive=0.05)
-
-            filtered_df = pd.concat([single_positive_df, double_positive_df]).reset_index(drop=True)
+            if dp_markers:
+                double_positive_df = self.subset_functional_markers(cell_filtered_df, dp_markers, prefix='dp',
+                                                                    mean_percent_positive=0.05)
+                filtered_df = pd.concat([single_positive_df, double_positive_df]).reset_index(drop=True)
+            else:
+                filtered_df = single_positive_df.reset_index(drop=True)
 
             total_df = filtered_df
             self.adata_table.uns['functional_marker_stats_filtered'] = total_df
