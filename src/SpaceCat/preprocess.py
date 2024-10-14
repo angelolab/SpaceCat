@@ -51,12 +51,13 @@ def create_double_positive_table(marker_vals, threshold_list):
     return marker_vals
 
 
-def create_functional_tables(adata_table, threshold_list):
+def create_functional_tables(adata_table, threshold_list, check_double_positive):
     """ Take in a cell table and return a new table, with functional marker positivity info for
     each cell.
     Args:
         adata_table (anndata): cell table containing intensity data for each marker
         threshold_list (list): list of functional markers and their pre-determined thresholds
+        check_double_positive (bool): whether to determine double positive status of cells
 
     Returns:
         anndata:
@@ -65,14 +66,15 @@ def create_functional_tables(adata_table, threshold_list):
     marker_vals = adata_table.to_df()
 
     # add functional marker positivity to anndata cell table
-    sp_table = create_single_positive_table(marker_vals, threshold_list)
-    dp_table = create_double_positive_table(sp_table, threshold_list)
-    dp_table = dp_table.replace({True: 1, False: 0})
+    marker_positivity = create_single_positive_table(marker_vals, threshold_list)
+    if check_double_positive:
+        marker_positivity = create_double_positive_table(marker_positivity, threshold_list)
+    marker_positivity = marker_positivity.replace({True: 1, False: 0})
 
     # create new anndata table with marker positivity contained in .X
-    adata_new = anndata.AnnData(np.array(dp_table))
+    adata_new = anndata.AnnData(np.array(marker_positivity))
     adata_new.X = adata_new.X.astype(np.float32)
-    adata_new.var_names = dp_table.columns
+    adata_new.var_names = marker_positivity.columns
     adata_new.obs = adata_table.obs.copy()
     adata_new.obsm = adata_table.obsm.copy()
     adata_new.obsp = adata_table.obsp.copy()
@@ -177,14 +179,15 @@ def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
     return compartment_cell_data
 
 
-def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_dir=None,
-                     mask_dir=None, seg_mask_substr='_whole_cell'):
+def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, check_double_positive=True,
+                     seg_dir=None, mask_dir=None, seg_mask_substr='_whole_cell'):
     """ Take in a cell table and return a processed table.
     Args:
         adata_table (anndata): cell table containing intensity data for each marker
         threshold_list (list): list of functional markers and their pre-determined thresholds
         image_key (str): column identifying specific regions of tissue in your data
         seg_label_key (str): column identifying the segmentation label for each cell in the image
+        check_double_positive (bool): whether to determine double positive status of cells
         seg_dir (str): path to the directory containing the cell segmentation masks
         mask_dir (str): path to the directory containing compartment masks for the image data
         seg_mask_substr (str): substr attached to segmentation masks after fov name
@@ -209,7 +212,7 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, seg_
         raise ValueError("Ensure all values contained in adata.X are numeric values.")
 
     # add functional marker positivity data
-    adata_new = create_functional_tables(adata_table, threshold_list)
+    adata_new = create_functional_tables(adata_table, threshold_list, check_double_positive)
 
     # add compartment data
     if seg_dir and mask_dir:
