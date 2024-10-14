@@ -947,14 +947,15 @@ class SpaceCat:
         self.generate_cluster_stats(cell_table_clusters, cluster_params, compartment_area_df)
 
         # verify specified ratio cell pairs are valid
-        try:
-            for cell_pair in specified_ratios:
-                verify_in_list(cell_ratio_pair=list(cell_pair),
-                               cell_types=cell_table_clusters[specified_ratios_cluster_key].unique())
-        except TypeError:
-            raise ValueError("You must specified_ratios cell pairings if providing specified_ratios_cluster_key.")
-        except Exception as e:
-            print(e)
+        if specified_ratios_cluster_key:
+            try:
+                for cell_pair in specified_ratios:
+                    verify_in_list(cell_ratio_pair=list(cell_pair),
+                                   cell_types=cell_table_clusters[specified_ratios_cluster_key].unique())
+            except TypeError:
+                raise ValueError("You must specified_ratios cell pairings if providing specified_ratios_cluster_key.")
+            except Exception as e:
+                print(e)
 
         # set density feature parameters
         stats_df = self.adata_table.uns['cluster_stats']
