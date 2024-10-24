@@ -947,14 +947,15 @@ class SpaceCat:
         self.generate_cluster_stats(cell_table_clusters, cluster_params, compartment_area_df)
 
         # verify specified ratio cell pairs are valid
-        try:
-            for cell_pair in specified_ratios:
-                verify_in_list(cell_ratio_pair=list(cell_pair),
-                               cell_types=cell_table_clusters[specified_ratios_cluster_key].unique())
-        except TypeError:
-            raise ValueError("You must specified_ratios cell pairings if providing specified_ratios_cluster_key.")
-        except Exception as e:
-            print(e)
+        if specified_ratios_cluster_key:
+            try:
+                for cell_pair in specified_ratios:
+                    verify_in_list(cell_ratio_pair=list(cell_pair),
+                                   cell_types=cell_table_clusters[specified_ratios_cluster_key].unique())
+            except TypeError:
+                raise ValueError("You must specified_ratios cell pairings if providing specified_ratios_cluster_key.")
+            except Exception as e:
+                print(e)
 
         # set density feature parameters
         stats_df = self.adata_table.uns['cluster_stats']
@@ -970,7 +971,7 @@ class SpaceCat:
         cluster_cats.pop(min(cluster_cats.keys()))
 
         # get second most broad cluster col and determine mapping between these two cluster levels
-        cluster_mapping = None
+        cluster_mapping, intermediate_cluster_col = None, None
         if len(self.cluster_key) > 1:
             intermediate_cluster_col = cluster_cats[min(cluster_cats.keys())]
             cluster_mapping = self.get_cluster_mapping(
@@ -1071,10 +1072,12 @@ class SpaceCat:
 
             # double positive_markers
             dp_markers = [x for x in cell_filtered_df.functional_marker.unique() if '__' in x]
-            double_positive_df = self.subset_functional_markers(cell_filtered_df, dp_markers, prefix='dp',
-                                                                mean_percent_positive=0.05)
-
-            filtered_df = pd.concat([single_positive_df, double_positive_df]).reset_index(drop=True)
+            if dp_markers:
+                double_positive_df = self.subset_functional_markers(cell_filtered_df, dp_markers, prefix='dp',
+                                                                    mean_percent_positive=0.05)
+                filtered_df = pd.concat([single_positive_df, double_positive_df]).reset_index(drop=True)
+            else:
+                filtered_df = single_positive_df.reset_index(drop=True)
 
             total_df = filtered_df
             self.adata_table.uns['functional_marker_stats_filtered'] = total_df
