@@ -971,7 +971,7 @@ class SpaceCat:
         cluster_cats.pop(min(cluster_cats.keys()))
 
         # get second most broad cluster col and determine mapping between these two cluster levels
-        cluster_mapping = None
+        cluster_mapping, intermediate_cluster_col = None, None
         if len(self.cluster_key) > 1:
             intermediate_cluster_col = cluster_cats[min(cluster_cats.keys())]
             cluster_mapping = self.get_cluster_mapping(
