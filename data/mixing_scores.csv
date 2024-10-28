@@ -1,4 +1,4 @@
-fov,Cancer_Immune,Cancer_Structural,Structural_Immune,Structural_T,Structural_B,Structural_Mono_Mac
+fov,Cancer_Immune_mixing_score,Cancer_Structural_mixing_score,Structural_Immune_mixing_score,Structural_T_mixing_score,Structural_B_mixing_score,Structural_Mono_Mac_mixing_score
 TONIC_TMA22_R10C6,,0.09379845,,,,
 TONIC_TMA22_R11C3,,0.06292189,0.287483703,,,0.181172291
 TONIC_TMA4_R10C1,,0.111861614,0.194490818,,,

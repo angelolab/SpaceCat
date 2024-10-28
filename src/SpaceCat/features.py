@@ -784,7 +784,7 @@ class SpaceCat:
 
                 # create longform df
                 img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
-                img_stats_long['feature_name'] = stat_name + '__' + img_stats_long[stat_name]
+                img_stats_long['feature_name'] = img_stats_long[stat_name]
 
                 # remove nan and inf values
                 img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
