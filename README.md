@@ -207,7 +207,10 @@ features = SpaceCat(adata_processed, image_key='fov', seg_label_key='label', cel
 ```commandline
 # read in image level dataframes
 fiber_df = pd.read_csv(os.path.join(data_dir, 'fiber_stats_table.csv'))
+fiber_tile_df = pd.read_csv(os.path.join(data_dir, 'fiber_stats_per_tile.csv'))
 mixing_df = pd.read_csv(os.path.join(data_dir, 'mixing_scores.csv'))
+kmeans_img_proportions = pd.read_csv(os.path.join(data_dir, 'neighborhood_image_proportions.csv'))
+kmeans_compartment_proportions = pd.read_csv(os.path.join(data_dir, 'neighborhood_compartment_proportions.csv'))
 
 # specify cell type pairs to compute a ratio for
 ratio_pairings = [('CD8T', 'CD4T'), ('CD4T', 'Treg'), ('CD8T', 'Treg'), ('CD68_Mac', 'CD163_Mac')]
@@ -218,7 +221,10 @@ per_cell_stats=[
 ]
 per_img_stats=[
     ['fiber', fiber_df], 
-    ['mixing_score', mixing_df]
+    ['fiber', fiber_tile_df],
+    ['mixing_score', mixing_df],
+    ['kmeans_cluster', kmeans_img_proportions],
+    ['kmeans_cluster', kmeans_compartment_proportions]
 ]
 
 # Generate features and save anndata
