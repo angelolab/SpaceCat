@@ -1035,9 +1035,10 @@ class SpaceCat:
         self.generate_per_cell_stats(cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats)
 
         # add compartment area stats
-        compartment_area_stats, compartment_ratio_stats = self.calculate_compartment_features(compartment_area_df)
-        per_img_stats.append(['compartment_area', compartment_area_stats])
-        per_img_stats.append(['compartment_area_ratio', compartment_ratio_stats])
+        if self.compartment_list != ['all']:
+            compartment_area_stats, compartment_ratio_stats = self.calculate_compartment_features(compartment_area_df)
+            per_img_stats.append(['compartment_area', compartment_area_stats])
+            per_img_stats.append(['compartment_area_ratio', compartment_ratio_stats])
 
         # generate per image features
         self.generate_per_img_stats(per_img_stats)
