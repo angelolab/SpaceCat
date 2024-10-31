@@ -391,6 +391,43 @@ class SpaceCat:
             # add to final dfs list
             self.feature_data_list.append(cell_type1_df_formatted)
 
+    def calculate_compartment_features(self, compartment_area_df, minimum_prop=0.01):
+        """ Calculate per image compartment area and ratio stats.
+        compartment_area_df (pd.DataFrame): the dataframe containing the areas of each compartment
+        minimum_prop (float): minimum proportion required of a compartment for ratio to be computed
+
+        Returns:
+            tuple (pd.DataFrame, pd.DataFrame):
+                separate tables for area and ratio values respectively
+        """
+
+        # calculate proportion of compartment in each tissue
+        area_stats = compartment_area_df.pivot(index=self.image_key, columns=[self.compartment_key],
+                                               values=self.compartment_area_key)
+        for col in area_stats.columns:
+            if col != 'all':
+                area_stats[col + '__proportion'] = area_stats[col] / area_stats['all']
+        area_stats = area_stats.drop(columns=self.compartment_list)
+
+        # calculate ratios of compartment proportions
+        ratio_stats = area_stats.rename(
+            columns=dict(zip(area_stats.columns, [col.replace('__proportion', '') for col in area_stats.columns])))
+
+        for compartment1, compartment2 in list(combinations(ratio_stats.columns, 2)):
+            # only calculate ratio for compartment proportion above threshold
+            compartment1_keep_mask = ratio_stats[compartment1] > minimum_prop
+            compartment2_keep_mask = ratio_stats[compartment2] > minimum_prop
+            keep_mask = compartment1_keep_mask.values | compartment2_keep_mask.values
+            ratio_stats = ratio_stats[keep_mask]
+
+            # calculate log ratio
+            ratio_stats[compartment1 + '__' + compartment2 + '__log2_ratio'] = np.log2(
+                (ratio_stats[compartment1].values + minimum_prop) /
+                (ratio_stats[compartment2].values + minimum_prop))
+        ratio_stats = ratio_stats.drop(columns=[col for col in self.compartment_list if col != 'all'])
+
+        return area_stats.reset_index(), ratio_stats.reset_index()
+
     ## FEATURE GENERATION FUNCTIONS ##
     def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, compartment_area_df,
                                exclude_missing_compartments=True):
@@ -996,6 +1033,12 @@ class SpaceCat:
 
         # generate misc per cell features
         self.generate_per_cell_stats(cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats)
+
+        # add compartment area stats
+        if self.compartment_list != ['all']:
+            compartment_area_stats, compartment_ratio_stats = self.calculate_compartment_features(compartment_area_df)
+            per_img_stats.append(['compartment_area', compartment_area_stats])
+            per_img_stats.append(['compartment_area_ratio', compartment_ratio_stats])
 
         # generate per image features
         self.generate_per_img_stats(per_img_stats)
