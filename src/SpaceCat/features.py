@@ -640,6 +640,7 @@ class SpaceCat:
         stats_df_comb = pd.concat(stats_dfs, axis=0)
         stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
         stats_df_comb.dropna(inplace=True)
+        stats_df_comb.reset_index(inplace=True, drop=True)
         self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
 
         if df_name == 'functional_marker_stats':
@@ -648,7 +649,7 @@ class SpaceCat:
             if filter_stats:
                 # filter stats by minimum cell count
                 cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
-                self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df
+                self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df.reset_index(drop=True)
 
     def create_neighborhood_matrix(self, diversity_feature_level, pixel_radius):
         """ Checks the distances between cells in an image and creates a neighborhood matrix.
