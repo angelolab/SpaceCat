@@ -100,7 +100,9 @@ The required variables are:
 markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
-                  'compartment_example', 'compartment_area_example', 'area', 'major_axis_length', 'cell_size']
+                  'compartment_example', 'compartment_area_example', 'area', 'major_axis_length', 'cell_size',
+                  'distance_to__B', 'distance_to__Cancer', 'distance_to__Granulocyte', 'distance_to__Mono_Mac', 
+                  'distance_to__NK', 'distance_to__Other', 'distance_to__Structural', 'distance_to__T']
 ```
 
 Step 3: Create the anndata object and save.
@@ -217,7 +219,10 @@ ratio_pairings = [('CD8T', 'CD4T'), ('CD4T', 'Treg'), ('CD8T', 'Treg'), ('CD68_M
 
 # specify addtional per cell and per image stats
 per_cell_stats=[
-    ['morphology', 'cell_cluster', ['area', 'major_axis_length']]
+    ['morphology', 'cell_cluster', ['area', 'major_axis_length']],
+    ['linear_distance', 'cell_cluster_broad', ['distance_to__B', 'distance_to__Cancer', 'distance_to__Granulocyte', 'distance_to__Mono_Mac', 
+                                               'distance_to__NK', 'distance_to__Other', 'distance_to__Structural', 'distance_to__T']]
+
 ]
 per_img_stats=[
     ['fiber', fiber_df], 
@@ -228,7 +233,7 @@ per_img_stats=[
 ]
 
 # Generate features and save anndata
-adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', diversity_feature_level='cell_cluster', pixel_radius = 50,
+adata_processed = features.run_spacecat(functional_feature_level='cell_cluster', diversity_feature_level='cell_cluster', pixel_radius=50,
                                         specified_ratios_cluster_key='cell_cluster', specified_ratios=ratio_pairings,
                                         per_cell_stats=per_cell_stats, per_img_stats=per_img_stats)
 
