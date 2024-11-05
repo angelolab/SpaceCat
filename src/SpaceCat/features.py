@@ -267,6 +267,8 @@ class SpaceCat:
             for compartment in self.compartment_list:
                 compartment_df = input_df[input_df.subset == compartment].copy()
                 compartment_df['feature_name'] = compartment_df[col_name] + '__' + compartment_df.cell_type
+                if col_name == 'linear_distance':
+                    compartment_df['feature_name'] = compartment_df.cell_type + '__' + compartment_df[col_name]
 
                 compartment_df_formatted = self.format_helper(compartment_df, compartment, cell_pop_level, col_name)
 
@@ -637,6 +639,7 @@ class SpaceCat:
 
         stats_df_comb = pd.concat(stats_dfs, axis=0)
         stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
+        stats_df_comb.dropna(inplace=True)
         self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
 
         if df_name == 'functional_marker_stats':
