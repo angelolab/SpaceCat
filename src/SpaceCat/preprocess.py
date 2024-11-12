@@ -179,6 +179,28 @@ def preprocess_compartment_masks(seg_dir, mask_dir, seg_mask_substr):
     return compartment_cell_data
 
 
+def automatic_threshold(adata_table, threshold_list):
+    """ Calculate an automatic threshold for any markers not that do not have one provided.
+    Args:
+        adata_table (anndata): cell table containing intensity data for each marker
+        threshold_list (list): list of functional markers and their pre-determined thresholds
+
+    Returns:
+        list:
+            a new list with missing marker thresholds included
+    """
+    marker_vals = adata_table.to_df()
+    new_threshold_list = []
+
+    for marker, threshold in threshold_list:
+        # if no threshold provided, use value one standard deviation above the median
+        if not threshold:
+            threshold = np.median(marker_vals[marker].values) + marker_vals[marker].values.std()
+        new_threshold_list.append([marker, threshold])
+
+    return new_threshold_list
+
+
 def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, check_double_positive=True,
                      seg_dir=None, mask_dir=None, seg_mask_substr='_whole_cell'):
     """ Take in a cell table and return a processed table.
@@ -211,6 +233,10 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, chec
     except ValueError:
         raise ValueError("Ensure all values contained in adata.X are numeric values.")
 
+    # assigne automatic thresholding if none provided
+    if None in [x[1] for x in threshold_list]:
+        threshold_list = automatic_threshold(adata_table, threshold_list)
+
     # add functional marker positivity data
     adata_new = create_functional_tables(adata_table, threshold_list, check_double_positive)
 
@@ -231,5 +257,8 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, chec
         # append data to .obs
         adata_new.obs = adata_new.obs.merge(compartment_cell_data, on=[image_key, seg_label_key],
                                             how='left')
+
+    # save marker thresholds to anndata object
+    adata_new.uns['marker_thresholds'] = pd.DataFrame(threshold_list, columns=['Marker', 'Threshold'])
 
     return adata_new

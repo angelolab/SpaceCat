@@ -97,7 +97,10 @@ The required variables are:
 
 ```commandline
 # define column groupings
-markers = ['Ki67', 'CD38', 'CD45RB', 'CD45RO']
+markers = ['Au', 'CD11c', 'CD14', 'CD163', 'CD20', 'CD3', 'CD31', 'CD38', 'CD4', 'CD45', 'CD45RB', 'CD45RO', 'CD56', 'CD57',
+           'CD68', 'CD69', 'CD8', 'CK17', 'Calprotectin', 'ChyTr', 'Collagen1', 'ECAD', 'FAP', 'FOXP3', 'Fe', 'Fibronectin',
+           'GLUT1', 'H3K27me3', 'H3K9ac', 'HLA1', 'HLADR', 'IDO', 'Ki67', 'LAG3', 'Noodle', 'PD1', 'PDL1', 'SMA', 'TBET', 
+           'TCF1', 'TIM3', 'Vim']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
                   'compartment_example', 'compartment_area_example', 'area', 'major_axis_length', 'cell_size',
@@ -133,10 +136,19 @@ This preprocessed anndata output will only need to be generated once and saved. 
 functional marker positivity within cells and assigning each cell to a compartment region based on any provided masks.
 
 ### Functional Marker Positivity 
-**You will need to provide appropriate thresholds to indicate whether a cell is positive for each marker. 
+**Here you can provide appropriate thresholds to indicate whether a cell is positive for each marker. 
 This information will be used to generate functional marker [features](#feature-descriptions) in SpaceCat.**
+
+If you have not identified thresholds for your markers, simply provide `None` instead of a value and the threshold will be automatically 
+set at one standard deviation above the median marker intensity. Example shown below.
 ```commandline
-functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002]]
+functional_marker_thresholds = [['Ki67', 0.002], ['CD38', 0.004], ['CD45RB', 0.001], ['CD45RO', 0.002],
+                                ['CD57', 0.002], ['CD69', 0.002], ['GLUT1', 0.002], ['IDO', 0.001],
+                                ['LAG3', 0.002], ['PD1', 0.0005], ['PDL1', 0.001],
+                                ['HLA1', 0.001], ['HLADR', 0.001], ['TBET', 0.0015], ['TCF1', 0.001],
+                                ['TIM3', 0.001], ['Vim', 0.002], ['Fe', 0.1]]
+                                
+# functional_marker_thresholds = [['Ki67', None], ['CD38', 0.004], ...]
 ```
 
 ### Compartment Cell Assignment
