@@ -833,7 +833,7 @@ class SpaceCat:
                 self.adata_table.uns[df_name] = img_stats_long
 
                 # format features
-                self.format_helper(img_stats_long, compartment='all', cell_pop_level=np.nan, feature_type=stat_name)
+                self.format_helper(img_stats_long, compartment='all', cell_pop_level='nan', feature_type=stat_name)
 
                 # add to final dfs list
                 self.feature_data_list.append(img_stats_long)
