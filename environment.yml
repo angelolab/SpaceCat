@@ -6,8 +6,10 @@ channels:
 dependencies:
   - python=3.10
   - pip
+  - scikit-image=0.19.2  # pin the version to match ark-analysis
   - pip:
-    - squidpy
     - alpineer==0.1.12
     - ark-analysis==0.7.2
+    - squidpy==1.2.2
+    - anndata==0.10.8
     - .
