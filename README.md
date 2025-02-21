@@ -31,8 +31,8 @@ If you want to test out our tool, you can quickly run SpaceCat using the code be
   - [running SpaceCat](#running-spacecat)
   - [output tables](#output-tables)
   - [adding metadata](#adding-metadata)
-  - [feature descriptions](#feature-descriptions)
-
+  - [feature descriptions](#feature-descriptions) 
+- [How to cite](#how-to-cite)
 
 ## Installation
 ### conda environment
@@ -293,3 +293,11 @@ All features are computed separately in each image. In addition, if you provided
 
 Coming soon:
 - `kmeans_cluster`: Using k-means clustering to define cell neighborhoods in each image, we then calculated the proportion of cells belonging to each of the identified clusters across the region.
+
+## How to cite
+Please directly cite the `spacecat` repo (https://github.com/angelolab/spacecat) if it was a part of your analysis.
+In addition, please cite Greenwald, Nederlof et al. if it was relevant to your work:
+
+1. [Greenwald, Nederlof et al. Temporal and spatial composition of the tumor microenvironment predicts response to immune checkpoint inhibition [2025]](https://www.biorxiv.org/content/10.1101/2025.01.26.634557v1)
+
+
