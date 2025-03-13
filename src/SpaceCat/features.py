@@ -823,20 +823,48 @@ class SpaceCat:
                 stat_name, stat_df = stat_specs[0], stat_specs[1]
                 df_name = stat_name + '_stats'
 
-                # create longform df
-                img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
-                img_stats_long['feature_name'] = img_stats_long[stat_name]
+                if stat_name == 'kmeans_cluster' and 'cancer_border' in stat_df.columns[1]:
+                    for compartment in ['cancer_border', 'cancer_core', 'stroma_border', 'stroma_core']:
+                        df_name = stat_name + '_' + compartment + '_stats'
 
-                # remove nan and inf values
-                img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
+                        compartment_cols = [col for col in stat_df.columns if compartment in col]
+                        stat_df_sub = stat_df[['fov'] + compartment_cols]
+                        new_col_names = dict(
+                            zip(compartment_cols, [col.replace('__' + compartment, '') for col in compartment_cols]))
+                        stat_df_sub = stat_df_sub.rename(columns=new_col_names)
 
-                self.adata_table.uns[df_name] = img_stats_long
+                        # create longform df
+                        img_stats_long = pd.melt(stat_df_sub, id_vars=[self.image_key], var_name=stat_name,
+                                                 value_name='value')
+                        img_stats_long['feature_name'] = img_stats_long[stat_name]
 
-                # format features
-                self.format_helper(img_stats_long, compartment='all', cell_pop_level='nan', feature_type=stat_name)
+                        # remove nan and inf values
+                        img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
 
-                # add to final dfs list
-                self.feature_data_list.append(img_stats_long)
+                        self.adata_table.uns[df_name] = img_stats_long
+
+                        # format features
+                        self.format_helper(img_stats_long, compartment=compartment, cell_pop_level='nan',
+                                           feature_type=stat_name)
+
+                        # add to final dfs list
+                        self.feature_data_list.append(img_stats_long)
+
+                else:
+                    # create longform df
+                    img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
+                    img_stats_long['feature_name'] = img_stats_long[stat_name]
+
+                    # remove nan and inf values
+                    img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
+
+                    self.adata_table.uns[df_name] = img_stats_long
+
+                    # format features
+                    self.format_helper(img_stats_long, compartment='all', cell_pop_level='nan', feature_type=stat_name)
+
+                    # add to final dfs list
+                    self.feature_data_list.append(img_stats_long)
 
     def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.1):
         """  A function to filter out features that are highly correlated in compartments.
