@@ -218,6 +218,10 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, chec
         anndata:
             a new anndata table with the relevant information added
     """
+    if type(adata_table) is not anndata.AnnData:
+        raise ValueError("First input must be an AnnData object.")
+    if type(threshold_list) is not list:
+        raise ValueError(f"Threshold list must be in list format.")
 
     # check threshold list is subset of adata_table.X columns & that provided keys are in .obs
     verify_in_list(provided_thresholds=[x[0] for x in threshold_list], all_markers=adata_table.var_names)

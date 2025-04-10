@@ -1,3 +1,4 @@
+import anndata
 import numpy as np
 import pandas as pd
 import squidpy as sq
@@ -11,10 +12,14 @@ class SpaceCat:
 
     def __init__(self, adata_table, image_key, seg_label_key, cell_area_key, cluster_key,
                  compartment_key, compartment_area_key, minimum_density=0.0005):
+        if type(adata_table) is not anndata.AnnData:
+            raise ValueError("First input must be an AnnData object.")
         self.adata_table = adata_table.copy()
         self.image_key = image_key
         self.seg_label_key = seg_label_key
         self.cell_area_key = cell_area_key
+        if type(cluster_key) is not list:
+            raise ValueError(f"Cluster key provided must be in list format: ['{cluster_key}'].")
         self.cluster_key = cluster_key
         self.compartment_key_none = False if compartment_key else True
         self.compartment_key = compartment_key if compartment_key else 'compartment'
@@ -1003,6 +1008,11 @@ class SpaceCat:
                 the anndata table with all intermediate and final tables appended
         """
         # validation checks
+        list_vars = [specified_ratios, per_cell_stats, per_img_stats]
+        for arg, arg_name in zip(list_vars, ['specified_ratios', 'per_cell_stats', 'per_img_stats']):
+            if type(arg) is not list:
+                raise ValueError(f"Input {arg_name} must be in list format.")
+
         verify_in_list(marker_positivity_level=functional_feature_level, all_cluster_levels=self.cluster_key)
         verify_in_list(specified_ratios_cluster_key=specified_ratios_cluster_key, all_cluster_levels=self.cluster_key)
         for stat_specs in per_cell_stats:
