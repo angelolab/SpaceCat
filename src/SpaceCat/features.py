@@ -1,3 +1,4 @@
+import anndata
 import numpy as np
 import pandas as pd
 import squidpy as sq
@@ -11,10 +12,14 @@ class SpaceCat:
 
     def __init__(self, adata_table, image_key, seg_label_key, cell_area_key, cluster_key,
                  compartment_key, compartment_area_key, minimum_density=0.0005):
+        if type(adata_table) is not anndata.AnnData:
+            raise ValueError("First input must be an AnnData object.")
         self.adata_table = adata_table.copy()
         self.image_key = image_key
         self.seg_label_key = seg_label_key
         self.cell_area_key = cell_area_key
+        if type(cluster_key) is not list:
+            raise ValueError(f"Cluster key provided must be in list format: ['{cluster_key}'].")
         self.cluster_key = cluster_key
         self.compartment_key_none = False if compartment_key else True
         self.compartment_key = compartment_key if compartment_key else 'compartment'
@@ -23,6 +28,7 @@ class SpaceCat:
             np.unique(adata_table.obs[compartment_key])) if not self.compartment_key_none else []
         self.compartment_list = self.compartment_list + ['all']
         self.minimum_density = minimum_density
+        self.functional_feature_level = ''
 
         # validation checks
         verify_in_list(provided_columns=[self.image_key, self.seg_label_key],
@@ -538,6 +544,9 @@ class SpaceCat:
         for compartment in self.compartment_list:
             compartment_df = input_df[input_df.subset == compartment].copy()
             cell_types = compartment_df.cell_type.unique()
+            if 'Cancer' in cell_types and 'Structural' in cell_types:
+                cell_types = [cell_type for cell_type in cell_types if cell_type not in ['Cancer', 'Structural']]
+                cell_types = cell_types + ['Cancer', 'Structural']
             cell_types = combinations(cell_types, 2)
 
             self.calculate_ratio_stats(
@@ -547,7 +556,7 @@ class SpaceCat:
             # compute ratio of specific cell types at specified cluster level
             ratio_cluster_level, cell_pop_level = \
                 [f'{specified_ratios_cluster_key}_density', specified_ratios_cluster_key]
-            input_df = stats_df[stats_df['metric'].isin([specified_ratios_cluster_key])]
+            input_df = stats_df[stats_df['metric'].isin([ratio_cluster_level])]
             for compartment in self.compartment_list:
                 compartment_df = input_df[input_df.subset == compartment].copy()
 
@@ -589,6 +598,12 @@ class SpaceCat:
                 table=cell_table_clusters.loc[mask, :], cluster_col_name=cluster_col_name,
                 result_name=result_name, var_name='cell_type', subset_col=subset_col,
                 cluster_stats=True, normalize=True, drop_cols=drop_cols))
+
+        # add all broad cell diversity
+        cluster_broad_freq = self.adata_table.uns['cluster_stats']
+        cluster_broad_freq = cluster_broad_freq[cluster_broad_freq.metric == 'cell_cluster_broad_freq']
+        cluster_dfs.append(cluster_broad_freq)
+        diversity_params.append(['cell_cluster_broad', 'cell_cluster_broad_freq', 'cell_cluster_broad'])
 
         # concat dfs into single df
         total_df_clusters = pd.concat(cluster_dfs, axis=0)
@@ -823,22 +838,50 @@ class SpaceCat:
                 stat_name, stat_df = stat_specs[0], stat_specs[1]
                 df_name = stat_name + '_stats'
 
-                # create longform df
-                img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
-                img_stats_long['feature_name'] = img_stats_long[stat_name]
+                if stat_name == 'kmeans_cluster' and 'cancer_border' in stat_df.columns[1]:
+                    for compartment in ['cancer_border', 'cancer_core', 'stroma_border', 'stroma_core']:
+                        df_name = stat_name + '_' + compartment + '_stats'
 
-                # remove nan and inf values
-                img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
+                        compartment_cols = [col for col in stat_df.columns if compartment in col]
+                        stat_df_sub = stat_df[['fov'] + compartment_cols]
+                        new_col_names = dict(
+                            zip(compartment_cols, [col.replace('__' + compartment, '') for col in compartment_cols]))
+                        stat_df_sub = stat_df_sub.rename(columns=new_col_names)
 
-                self.adata_table.uns[df_name] = img_stats_long
+                        # create longform df
+                        img_stats_long = pd.melt(stat_df_sub, id_vars=[self.image_key], var_name=stat_name,
+                                                 value_name='value')
+                        img_stats_long['feature_name'] = img_stats_long[stat_name]
 
-                # format features
-                self.format_helper(img_stats_long, compartment='all', cell_pop_level='nan', feature_type=stat_name)
+                        # remove nan and inf values
+                        img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
 
-                # add to final dfs list
-                self.feature_data_list.append(img_stats_long)
+                        self.adata_table.uns[df_name] = img_stats_long
 
-    def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.1):
+                        # format features
+                        self.format_helper(img_stats_long, compartment=compartment, cell_pop_level='nan',
+                                           feature_type=stat_name)
+
+                        # add to final dfs list
+                        self.feature_data_list.append(img_stats_long)
+
+                else:
+                    # create longform df
+                    img_stats_long = pd.melt(stat_df, id_vars=[self.image_key], var_name=stat_name, value_name='value')
+                    img_stats_long['feature_name'] = img_stats_long[stat_name]
+
+                    # remove nan and inf values
+                    img_stats_long = img_stats_long[~img_stats_long.isin([np.nan, np.inf, -np.inf]).any(axis=1)]
+
+                    self.adata_table.uns[df_name] = img_stats_long
+
+                    # format features
+                    self.format_helper(img_stats_long, compartment='all', cell_pop_level='nan', feature_type=stat_name)
+
+                    # add to final dfs list
+                    self.feature_data_list.append(img_stats_long)
+
+    def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.15):
         """  A function to filter out features that are highly correlated in compartments.
         Args:
             correlation_filtering_thresh (float): the max correlation value the features have to be
@@ -965,6 +1008,11 @@ class SpaceCat:
                 the anndata table with all intermediate and final tables appended
         """
         # validation checks
+        list_vars = [specified_ratios, per_cell_stats, per_img_stats]
+        for arg, arg_name in zip(list_vars, ['specified_ratios', 'per_cell_stats', 'per_img_stats']):
+            if type(arg) is not list:
+                raise ValueError(f"Input {arg_name} must be in list format.")
+
         verify_in_list(marker_positivity_level=functional_feature_level, all_cluster_levels=self.cluster_key)
         verify_in_list(specified_ratios_cluster_key=specified_ratios_cluster_key, all_cluster_levels=self.cluster_key)
         for stat_specs in per_cell_stats:
@@ -1034,6 +1082,7 @@ class SpaceCat:
 
         # add functional features to list
         per_cell_stats.append(['functional_marker', functional_feature_level, None])
+        self.functional_feature_level = functional_feature_level
 
         # generate misc per cell features
         self.generate_per_cell_stats(cell_table_clusters, per_cell_stats, filter_stats, deduplicate_stats)
@@ -1174,32 +1223,49 @@ class SpaceCat:
         """
 
         combo_dfs = []
-        for cluster in self.cluster_key:
-            # subset functional stats table for cluster level
-            broad_df = filtered_df[filtered_df.metric == f'{cluster}_freq']
-            broad_df = broad_df[np.logical_and(broad_df.functional_marker.isin(marker_list), broad_df.subset == 'all')]
-            broad_df_agg = broad_df[['functional_marker', 'cell_type', 'value']].groupby(
-                ['cell_type', 'functional_marker']).agg('mean')
-            broad_df_agg = broad_df_agg.reset_index()
+        cluster = self.functional_feature_level
 
-            # determine whether avg marker intensity is above the threshold and save matrix
-            broad_df = broad_df_agg.pivot(index='cell_type', columns='functional_marker', values='value')
-            include_df = broad_df > mean_percent_positive
-            self.adata_table.uns[f'{prefix}_marker_inclusion_{cluster}'] = include_df
+        # subset functional stats table for cluster level
+        broad_df = filtered_df[filtered_df.metric == f'{cluster}_freq']
+        broad_df = broad_df[np.logical_and(broad_df.functional_marker.isin(marker_list), broad_df.subset == 'all')]
+        broad_df_agg = broad_df[['functional_marker', 'cell_type', 'value']].groupby(
+            ['cell_type', 'functional_marker']).agg('mean')
+        broad_df_agg = broad_df_agg.reset_index()
 
-            # subset functional df to only include functional markers at this resolution
-            func_df = filtered_df[filtered_df.metric.isin([f'{cluster}_count', f'{cluster}_freq'])]
+        # determine whether avg marker intensity is above the threshold and save matrix
+        broad_df = broad_df_agg.pivot(index='cell_type', columns='functional_marker', values='value')
+        include_df = broad_df > mean_percent_positive
 
-            # loop over each cell type, and get the corresponding markers
-            for cell_type in include_df.index:
-                markers = include_df.columns[include_df.loc[cell_type] == True]
+        ## specific to TONIC cohort ##
+        if prefix == 'sp':
+            # include for all cells
+            general_markers = ['Ki67+', 'HLA1+', 'Vim+', 'H3K9ac_H3K27me3_ratio+']
+            include_df[[general_markers]] = True
 
-                # subset functional df to only include this cell type and indicated markers
-                func_df_cell = func_df[func_df.cell_type == cell_type]
-                func_df_cell = func_df_cell[func_df_cell.functional_marker.isin(markers)]
+            # CD45 isoform ratios
+            double_pos = np.logical_and(include_df['CD45RO+'], include_df['CD45RB+'])
+            include_df['CD45RO_CD45RB_ratio+'] = double_pos
 
-                # append to list of dfs
-                combo_dfs.append(func_df_cell)
+            # Cancer expression
+            include_df.loc['Cancer_1', ['HLADR+', 'CD57+']] = True
+            include_df.loc['Cancer_2', ['HLADR+', 'CD57+']] = True
+            include_df.loc['Cancer_3', ['HLADR+', 'CD57+']] = True
+
+        self.adata_table.uns[f'{prefix}_marker_inclusion_{cluster}'] = include_df
+
+        # subset functional df to only include functional markers at this resolution
+        func_df = filtered_df[filtered_df.metric.isin([f'{cluster}_count', f'{cluster}_freq'])]
+
+        # loop over each cell type, and get the corresponding markers
+        for cell_type in include_df.index:
+            markers = include_df.columns[include_df.loc[cell_type] == True]
+
+            # subset functional df to only include this cell type and indicated markers
+            func_df_cell = func_df[func_df.cell_type == cell_type]
+            func_df_cell = func_df_cell[func_df_cell.functional_marker.isin(markers)]
+
+            # append to list of dfs
+            combo_dfs.append(func_df_cell)
 
         combo_df = pd.concat(combo_dfs)
 
