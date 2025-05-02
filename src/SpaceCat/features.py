@@ -5,6 +5,7 @@ import squidpy as sq
 
 from itertools import combinations
 from scipy.stats import spearmanr
+from scipy.sparse import csr_matrix
 from alpineer.misc_utils import verify_in_list
 
 
@@ -679,21 +680,28 @@ class SpaceCat:
         sq.gr.spatial_neighbors(adata, spatial_key='spatial', library_key=self.image_key,
                                 radius=pixel_radius, coord_type='generic')
 
-        # extract cell neighbors by specified cluster level
-        count_list = []
-        for i, name in enumerate(adata.obs_names):
-            row, col = adata.obsp['spatial_connectivities'][i, :].nonzero()
-            count = adata.obs[diversity_feature_level].iloc[col].value_counts()
-            count_list.append(count)
+        connectivities = adata.obsp['spatial_connectivities'].tocsr()
+        connectivities.data = np.ones_like(connectivities.data)
+        unique_labels = adata.obs[diversity_feature_level].cat.categories
+        labels = adata.obs[diversity_feature_level]
+        labels_codes = labels.cat.codes.values
+        n_cells = adata.n_obs
+        n_labels = len(unique_labels)
 
-        # create counts and frequencies matrices
-        neighborhood_counts = pd.DataFrame(count_list, index=adata.obs_names)
-        neighborhood_counts.fillna(0, inplace=True)
-        neighborhood_freqs = neighborhood_counts.div(neighborhood_counts.sum(axis=1), axis=0)
+        one_hot = csr_matrix((np.ones(n_cells), (np.arange(n_cells), labels_codes)),
+                             shape=(n_cells, n_labels))
+
+        neighborhood_counts_sparse = connectivities.dot(one_hot)
+        neighborhood_counts = neighborhood_counts_sparse.toarray()
+
+        neighborhood_counts_df = pd.DataFrame(neighborhood_counts,  index=adata.obs_names,
+                                              columns=unique_labels)
+        neighborhood_counts_df.fillna(0, inplace=True)
+        neighborhood_freqs_df = neighborhood_counts_df.div(neighborhood_counts_df.sum(axis=1), axis=0)
 
         # save neighbors matrices to the adata
         adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts
-        adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs
+        adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs_df
         self.adata_table = adata
 
     def shannon_diversity(self, proportions):
