@@ -700,7 +700,7 @@ class SpaceCat:
         neighborhood_freqs_df = neighborhood_counts_df.div(neighborhood_counts_df.sum(axis=1), axis=0)
 
         # save neighbors matrices to the adata
-        adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts
+        adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts_df
         adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs_df
         self.adata_table = adata
 
