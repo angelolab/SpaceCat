@@ -694,7 +694,7 @@ class SpaceCat:
         neighborhood_counts_sparse = connectivities.dot(one_hot)
         neighborhood_counts = neighborhood_counts_sparse.toarray()
 
-        neighborhood_counts_df = pd.DataFrame(neighborhood_counts,  index=adata.obs_names,
+        neighborhood_counts_df = pd.DataFrame(neighborhood_counts, index=adata.obs_names,
                                               columns=unique_labels)
         neighborhood_counts_df.fillna(0, inplace=True)
         neighborhood_freqs_df = neighborhood_counts_df.div(neighborhood_counts_df.sum(axis=1), axis=0)
@@ -1251,13 +1251,15 @@ class SpaceCat:
             include_df[[general_markers]] = True
 
             # CD45 isoform ratios
-            double_pos = np.logical_and(include_df['CD45RO+'], include_df['CD45RB+'])
-            include_df['CD45RO_CD45RB_ratio+'] = double_pos
+            if 'CD45RO+' in include_df.columns and 'CD45RB+' in include_df.columns:
+                double_pos = np.logical_and(include_df['CD45RO+'], include_df['CD45RB+'])
+                include_df['CD45RO_CD45RB_ratio+'] = double_pos
 
             # Cancer expression
-            include_df.loc['Cancer_1', ['HLADR+', 'CD57+']] = True
-            include_df.loc['Cancer_2', ['HLADR+', 'CD57+']] = True
-            include_df.loc['Cancer_3', ['HLADR+', 'CD57+']] = True
+            if 'HLADR+' in include_df.columns and 'CD57+' in include_df.columns:
+                include_df.loc['Cancer_1', ['HLADR+', 'CD57+']] = True
+                include_df.loc['Cancer_2', ['HLADR+', 'CD57+']] = True
+                include_df.loc['Cancer_3', ['HLADR+', 'CD57+']] = True
 
         self.adata_table.uns[f'{prefix}_marker_inclusion_{cluster}'] = include_df
 
