@@ -97,9 +97,9 @@ The required variables are:
 
 ```commandline
 # define column groupings
-markers = ['Au', 'CD11c', 'CD14', 'CD163', 'CD20', 'CD3', 'CD31', 'CD38', 'CD4', 'CD45', 'CD45RB', 'CD45RO', 'CD56', 'CD57',
+markers = ['CD11c', 'CD14', 'CD163', 'CD20', 'CD3', 'CD31', 'CD38', 'CD4', 'CD45', 'CD45RB', 'CD45RO', 'CD56', 'CD57',
            'CD68', 'CD69', 'CD8', 'CK17', 'Calprotectin', 'ChyTr', 'Collagen1', 'ECAD', 'FAP', 'FOXP3', 'Fe', 'Fibronectin',
-           'GLUT1', 'H3K27me3', 'H3K9ac', 'HLA1', 'HLADR', 'IDO', 'Ki67', 'LAG3', 'Noodle', 'PD1', 'PDL1', 'SMA', 'TBET', 
+           'GLUT1', 'H3K27me3', 'H3K9ac', 'HLA1', 'HLADR', 'IDO', 'Ki67', 'LAG3', 'PD1', 'PDL1', 'SMA', 'TBET', 
            'TCF1', 'TIM3', 'Vim']
 centroid_cols = ['centroid-0', 'centroid-1']
 cell_data_cols = ['fov', 'label', 'cell_meta_cluster', 'cell_cluster', 'cell_cluster_broad', 
@@ -171,6 +171,9 @@ compartment assignment can be skipped.**
 Then, you can run the preprocessing function and save the resulting anndata.
 ```commandline
 from SpaceCat.preprocess import preprocess_table
+
+seg_dir = os.path.join(data_dir, 'deepcell_output')
+mask_dir = os.path.join(data_dir, 'compartment_masks')
 
 adata_processed = preprocess_table(adata, functional_marker_thresholds, image_key='fov', 
                                    seg_label_key='label', seg_dir=seg_dir, mask_dir=mask_dir,
