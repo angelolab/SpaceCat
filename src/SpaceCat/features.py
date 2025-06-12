@@ -437,6 +437,145 @@ class SpaceCat:
 
         return area_stats.reset_index(), ratio_stats.reset_index()
 
+    def generate_stats(self, table, params, df_name, var_name, filter_stats, deduplicate_stats):
+        """ Create dataframe containing stats per cell type and compartment.
+        Args:
+            table (pd.DataFrame): table appropriately filtered to contain the values needed to generate features
+            params (list): list of which features to generate
+            df_name (str): name to save for the dataframe
+            var_name (str): name of the column containing the values
+            filter_stats (bool): whether to filter features by minimum cell count
+            deduplicate_stats (bool): whether to deduplicate highly correlated features
+
+        Returns:
+            generates and saves feature dataframe, as well as the filtered dataframe
+        """
+        subset_col = None if self.compartment_key_none else self.compartment_key
+
+        stats_dfs = []
+        for result_name, cluster_col_name in params:
+            normalize = True if '_freq' in result_name else False
+            drop_cols = [self.seg_label_key]
+            cluster_names = self.cluster_key.copy()
+            cluster_names.remove(cluster_col_name)
+            drop_cols.extend(cluster_names)
+
+            stats_dfs.append(self.create_long_df(
+                table=table, result_name=result_name, var_name=var_name,
+                cluster_col_name=cluster_col_name, drop_cols=drop_cols, normalize=normalize,
+                subset_col=subset_col))
+
+        stats_df_comb = pd.concat(stats_dfs, axis=0)
+        stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
+        stats_df_comb.dropna(inplace=True)
+        stats_df_comb.reset_index(inplace=True, drop=True)
+        self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
+
+        if df_name == 'functional_marker_stats':
+            self.filter_functional_features(table, stats_df_comb, filter_stats, deduplicate_stats)
+        else:
+            if filter_stats:
+                # filter stats by minimum cell count
+                cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
+                self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df.reset_index(drop=True)
+
+    def create_neighborhood_matrix(self, diversity_feature_level, pixel_radius):
+        """ Checks the distances between cells in an image and creates a neighborhood matrix.
+        Args:
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
+        Returns:
+            generates and saves the neighbors counts and frequencies
+        """
+        # create a graph from cell centroids
+        adata = self.adata_table
+        sq.gr.spatial_neighbors(adata, spatial_key='spatial', library_key=self.image_key,
+                                radius=pixel_radius, coord_type='generic')
+
+        connectivities = adata.obsp['spatial_connectivities'].tocsr()
+        connectivities.data = np.ones_like(connectivities.data)
+        unique_labels = adata.obs[diversity_feature_level].cat.categories
+        labels = adata.obs[diversity_feature_level]
+        labels_codes = labels.cat.codes.values
+        n_cells = adata.n_obs
+        n_labels = len(unique_labels)
+
+        one_hot = csr_matrix((np.ones(n_cells), (np.arange(n_cells), labels_codes)),
+                             shape=(n_cells, n_labels))
+
+        neighborhood_counts_sparse = connectivities.dot(one_hot)
+        neighborhood_counts = neighborhood_counts_sparse.toarray()
+
+        neighborhood_counts_df = pd.DataFrame(neighborhood_counts, index=adata.obs_names,
+                                              columns=unique_labels)
+        neighborhood_counts_df.fillna(0, inplace=True)
+        neighborhood_freqs_df = neighborhood_counts_df.div(neighborhood_counts_df.sum(axis=1), axis=0)
+
+        # save neighbors matrices to the adata
+        adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts_df
+        adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs_df
+        self.adata_table = adata
+
+    def shannon_diversity(self, proportions):
+        """ Calculates the shannon diversity index for the provided proportions of a community
+        Args:
+            proportions (np.array): the proportions of each individual group
+
+        Returns:
+            float:
+                the diversity of neighborhood
+        """
+
+        prop_index = proportions > 0
+        return -np.sum(proportions[prop_index] * np.log2(proportions[prop_index]))
+
+    def compute_neighborhood_diversity(self, diversity_feature_level, pixel_radius):
+        """ Computes the diversity score for each cell in the dataset
+        Args:
+            diversity_feature_level (str): cluster level to calculate diversity for
+            pixel_radius (int): distance from the cell for another cell to be called a neighbor
+        Returns:
+            pd.DataFrame:
+                table with diversity score for each cell
+        """
+        # add image and cell type information
+        neighborhood_mat = self.adata_table.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"]
+        neighborhood_mat = pd.concat(
+            [neighborhood_mat,
+             self.adata_table.obs.loc[:, [self.image_key, self.seg_label_key, diversity_feature_level]]], axis=1)
+
+        diversity_data = []
+        fov_list = np.unique(neighborhood_mat[self.image_key])
+        for fov in fov_list:
+            fov_neighborhoods = neighborhood_mat[neighborhood_mat[self.image_key] == fov]
+
+            diversity_scores = []
+            cells = fov_neighborhoods[self.seg_label_key]
+            for label in cells:
+                # retrieve an array of only the neighbor frequencies for the cell
+                neighbor_freqs = \
+                    fov_neighborhoods[fov_neighborhoods[self.seg_label_key] == label].drop(
+                        columns=[self.image_key, self.seg_label_key, diversity_feature_level]).values[0]
+
+                diversity_scores.append(self.shannon_diversity(neighbor_freqs))
+
+            # combine the data for cells in the image
+            fov_data = pd.DataFrame({
+                self.image_key: [fov] * len(cells),
+                self.seg_label_key: cells,
+                f'diversity_{diversity_feature_level}': diversity_scores
+            })
+            diversity_data.append(fov_data)
+
+        # dataframe containing all images
+        diversity_data = pd.concat(diversity_data)
+        compartment_col = [] if self.compartment_key_none else [self.compartment_key]
+        diversity_data = diversity_data.merge(
+            self.adata_table.obs[[self.image_key, self.seg_label_key] + compartment_col + self.cluster_key],
+            on=[self.image_key, self.seg_label_key])
+
+        return diversity_data
+
     ## FEATURE GENERATION FUNCTIONS ##
     def generate_cluster_stats(self, cell_table_clusters, cluster_df_params, compartment_area_df,
                                exclude_missing_compartments=True):
@@ -625,145 +764,6 @@ class SpaceCat:
                 # add to final dfs list
                 self.feature_data_list.append(cell_type_df_formatted)
 
-    def generate_stats(self, table, params, df_name, var_name, filter_stats, deduplicate_stats):
-        """ Create dataframe containing stats per cell type and compartment.
-        Args:
-            table (pd.DataFrame): table appropriately filtered to contain the values needed to generate features
-            params (list): list of which features to generate
-            df_name (str): name to save for the dataframe
-            var_name (str): name of the column containing the values
-            filter_stats (bool): whether to filter features by minimum cell count
-            deduplicate_stats (bool): whether to deduplicate highly correlated features
-
-        Returns:
-            generates and saves feature dataframe, as well as the filtered dataframe
-        """
-        subset_col = None if self.compartment_key_none else self.compartment_key
-
-        stats_dfs = []
-        for result_name, cluster_col_name in params:
-            normalize = True if '_freq' in result_name else False
-            drop_cols = [self.seg_label_key]
-            cluster_names = self.cluster_key.copy()
-            cluster_names.remove(cluster_col_name)
-            drop_cols.extend(cluster_names)
-
-            stats_dfs.append(self.create_long_df(
-                table=table, result_name=result_name, var_name=var_name,
-                cluster_col_name=cluster_col_name, drop_cols=drop_cols, normalize=normalize,
-                subset_col=subset_col))
-
-        stats_df_comb = pd.concat(stats_dfs, axis=0)
-        stats_df_comb['cell_type'] = stats_df_comb['cell_type'].astype(str)
-        stats_df_comb.dropna(inplace=True)
-        stats_df_comb.reset_index(inplace=True, drop=True)
-        self.adata_table.uns[df_name] = stats_df_comb.reset_index(drop=True)
-
-        if df_name == 'functional_marker_stats':
-            self.filter_functional_features(table, stats_df_comb, filter_stats, deduplicate_stats)
-        else:
-            if filter_stats:
-                # filter stats by minimum cell count
-                cell_filtered_df = self.filter_stats_by_cell_count(stats_df_comb)
-                self.adata_table.uns[df_name + '_filtered'] = cell_filtered_df.reset_index(drop=True)
-
-    def create_neighborhood_matrix(self, diversity_feature_level, pixel_radius):
-        """ Checks the distances between cells in an image and creates a neighborhood matrix.
-        Args:
-            diversity_feature_level (str): cluster level to calculate diversity for
-            pixel_radius (int): distance from the cell for another cell to be called a neighbor
-        Returns:
-            generates and saves the neighbors counts and frequencies
-        """
-        # create a graph from cell centroids
-        adata = self.adata_table
-        sq.gr.spatial_neighbors(adata, spatial_key='spatial', library_key=self.image_key,
-                                radius=pixel_radius, coord_type='generic')
-
-        connectivities = adata.obsp['spatial_connectivities'].tocsr()
-        connectivities.data = np.ones_like(connectivities.data)
-        unique_labels = adata.obs[diversity_feature_level].cat.categories
-        labels = adata.obs[diversity_feature_level]
-        labels_codes = labels.cat.codes.values
-        n_cells = adata.n_obs
-        n_labels = len(unique_labels)
-
-        one_hot = csr_matrix((np.ones(n_cells), (np.arange(n_cells), labels_codes)),
-                             shape=(n_cells, n_labels))
-
-        neighborhood_counts_sparse = connectivities.dot(one_hot)
-        neighborhood_counts = neighborhood_counts_sparse.toarray()
-
-        neighborhood_counts_df = pd.DataFrame(neighborhood_counts, index=adata.obs_names,
-                                              columns=unique_labels)
-        neighborhood_counts_df.fillna(0, inplace=True)
-        neighborhood_freqs_df = neighborhood_counts_df.div(neighborhood_counts_df.sum(axis=1), axis=0)
-
-        # save neighbors matrices to the adata
-        adata.obsm[f"neighbors_counts_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_counts_df
-        adata.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"] = neighborhood_freqs_df
-        self.adata_table = adata
-
-    def shannon_diversity(self, proportions):
-        """ Calculates the shannon diversity index for the provided proportions of a community
-        Args:
-            proportions (np.array): the proportions of each individual group
-
-        Returns:
-            float:
-                the diversity of neighborhood
-        """
-
-        prop_index = proportions > 0
-        return -np.sum(proportions[prop_index] * np.log2(proportions[prop_index]))
-
-    def compute_neighborhood_diversity(self, diversity_feature_level, pixel_radius):
-        """ Computes the diversity score for each cell in the dataset
-        Args:
-            diversity_feature_level (str): cluster level to calculate diversity for
-            pixel_radius (int): distance from the cell for another cell to be called a neighbor
-        Returns:
-            pd.DataFrame:
-                table with diversity score for each cell
-        """
-        # add image and cell type information
-        neighborhood_mat = self.adata_table.obsm[f"neighbors_freqs_{diversity_feature_level}_radius{pixel_radius}"]
-        neighborhood_mat = pd.concat(
-            [neighborhood_mat,
-             self.adata_table.obs.loc[:, [self.image_key, self.seg_label_key, diversity_feature_level]]], axis=1)
-
-        diversity_data = []
-        fov_list = np.unique(neighborhood_mat[self.image_key])
-        for fov in fov_list:
-            fov_neighborhoods = neighborhood_mat[neighborhood_mat[self.image_key] == fov]
-
-            diversity_scores = []
-            cells = fov_neighborhoods[self.seg_label_key]
-            for label in cells:
-                # retrieve an array of only the neighbor frequencies for the cell
-                neighbor_freqs = \
-                    fov_neighborhoods[fov_neighborhoods[self.seg_label_key] == label].drop(
-                        columns=[self.image_key, self.seg_label_key, diversity_feature_level]).values[0]
-
-                diversity_scores.append(self.shannon_diversity(neighbor_freqs))
-
-            # combine the data for cells in the image
-            fov_data = pd.DataFrame({
-                self.image_key: [fov] * len(cells),
-                self.seg_label_key: cells,
-                f'diversity_{diversity_feature_level}': diversity_scores
-            })
-            diversity_data.append(fov_data)
-
-        # dataframe containing all images
-        diversity_data = pd.concat(diversity_data)
-        compartment_col = [] if self.compartment_key_none else [self.compartment_key]
-        diversity_data = diversity_data.merge(
-            self.adata_table.obs[[self.image_key, self.seg_label_key] + compartment_col + self.cluster_key],
-            on=[self.image_key, self.seg_label_key])
-
-        return diversity_data
-
     def generate_cell_diversity_features(self, diversity_feature_level, pixel_radius, filter_stats):
         """ Wrapper function to generate per cell diversity features.
         Args:
@@ -888,66 +888,6 @@ class SpaceCat:
 
                     # add to final dfs list
                     self.feature_data_list.append(img_stats_long)
-
-    def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.15):
-        """  A function to filter out features that are highly correlated in compartments.
-        Args:
-            correlation_filtering_thresh (float): the max correlation value the features have to be
-                included the feature table, any features with correlation above it will be excluded
-            image_prop (float): minimum proportion of images for compartment feature to include
-        Returns:
-            pd.DataFrame
-                table with highly correlated features removed
-        """
-        # filter FOV features based on correlation in compartments
-        feature_df = self.combined_feature_data
-
-        # filter out features that are highly correlated in compartments
-        feature_names = feature_df.feature_name.unique()
-        exclude_list = []
-
-        for feature_name in feature_names:
-            fov_data_feature = feature_df.loc[feature_df.feature_name == feature_name, :]
-
-            # get the compartments present for this feature
-            compartments = fov_data_feature[self.compartment_key].unique()
-
-            # if only one compartment, skip
-            if len(compartments) == 1:
-                continue
-
-            fov_data_wide = fov_data_feature.pivot(
-                index=self.image_key, columns=self.compartment_key, values='raw_value')
-
-            # filter out features that are nans or mostly zeros
-            for compartment in compartments:
-                nan_count = fov_data_wide[compartment].isna().sum()
-                zero_count = (fov_data_wide[compartment] == 0).sum()
-
-                if (len(fov_data_wide) - nan_count - zero_count) / len(fov_data_wide) < image_prop:
-                    exclude_list.append(feature_name + '__' + compartment)
-                    fov_data_wide = fov_data_wide.drop(columns=compartment)
-
-            # compute correlations
-            compartments = fov_data_wide.columns
-            compartments = compartments[compartments != 'all']
-            for compartment in compartments:
-                if (~np.isnan(fov_data_wide['all'].values * fov_data_wide[compartment].values)).sum() < 3:
-                    continue
-                corr, _ = spearmanr(fov_data_wide['all'].values, fov_data_wide[compartment].values,
-                                    nan_policy='omit')
-                if corr > correlation_filtering_thresh:
-                    exclude_list.append(feature_name + '__' + compartment)
-
-        # remove features from dataframe
-        exclude_df = pd.DataFrame({'feature_name_unique': exclude_list})
-        self.excluded_features = exclude_df
-        self.adata_table.uns['excluded_features'] = exclude_df
-        feature_df_filtered = \
-            feature_df.loc[~feature_df.feature_name_unique.isin(
-                exclude_df.feature_name_unique.values), :]
-
-        return feature_df_filtered.reset_index(drop=True)
 
     def combine_features(self, correlation_filtering_thresh=0.7):
         """ Combines the previously generated feature tables into a single dataframe.
@@ -1110,6 +1050,66 @@ class SpaceCat:
         return self.adata_table
 
     ## FILTERING FUNCTIONS ##
+    def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.15):
+        """  A function to filter out features that are highly correlated in compartments.
+        Args:
+            correlation_filtering_thresh (float): the max correlation value the features have to be
+                included the feature table, any features with correlation above it will be excluded
+            image_prop (float): minimum proportion of images for compartment feature to include
+        Returns:
+            pd.DataFrame
+                table with highly correlated features removed
+        """
+        # filter FOV features based on correlation in compartments
+        feature_df = self.combined_feature_data
+
+        # filter out features that are highly correlated in compartments
+        feature_names = feature_df.feature_name.unique()
+        exclude_list = []
+
+        for feature_name in feature_names:
+            fov_data_feature = feature_df.loc[feature_df.feature_name == feature_name, :]
+
+            # get the compartments present for this feature
+            compartments = fov_data_feature[self.compartment_key].unique()
+
+            # if only one compartment, skip
+            if len(compartments) == 1:
+                continue
+
+            fov_data_wide = fov_data_feature.pivot(
+                index=self.image_key, columns=self.compartment_key, values='raw_value')
+
+            # filter out features that are nans or mostly zeros
+            for compartment in compartments:
+                nan_count = fov_data_wide[compartment].isna().sum()
+                zero_count = (fov_data_wide[compartment] == 0).sum()
+
+                if (len(fov_data_wide) - nan_count - zero_count) / len(fov_data_wide) < image_prop:
+                    exclude_list.append(feature_name + '__' + compartment)
+                    fov_data_wide = fov_data_wide.drop(columns=compartment)
+
+            # compute correlations
+            compartments = fov_data_wide.columns
+            compartments = compartments[compartments != 'all']
+            for compartment in compartments:
+                if (~np.isnan(fov_data_wide['all'].values * fov_data_wide[compartment].values)).sum() < 3:
+                    continue
+                corr, _ = spearmanr(fov_data_wide['all'].values, fov_data_wide[compartment].values,
+                                    nan_policy='omit')
+                if corr > correlation_filtering_thresh:
+                    exclude_list.append(feature_name + '__' + compartment)
+
+        # remove features from dataframe
+        exclude_df = pd.DataFrame({'feature_name_unique': exclude_list})
+        self.excluded_features = exclude_df
+        self.adata_table.uns['excluded_features'] = exclude_df
+        feature_df_filtered = \
+            feature_df.loc[~feature_df.feature_name_unique.isin(
+                exclude_df.feature_name_unique.values), :]
+
+        return feature_df_filtered.reset_index(drop=True)
+
     def filter_stats_by_cell_count(self, total_df, min_cell_count=5):
         """ Filters a feature table by minimum cell count.
         Args:
