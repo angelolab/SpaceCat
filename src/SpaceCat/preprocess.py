@@ -83,8 +83,7 @@ def create_functional_tables(adata_table, threshold_list, check_double_positive)
 
 
 def calculate_compartment_areas(mask_dir, fovs):
-    """Calculate the area of each mask per fov
-
+    """ Calculate the area of each mask per fov
     Args:
         mask_dir (str): path to directory containing masks for each fov
         fovs (list): list of fovs to calculate mask areas for
@@ -113,8 +112,7 @@ def calculate_compartment_areas(mask_dir, fovs):
 
 
 def assign_cells_to_compartment(seg_dir, mask_dir, fovs, seg_mask_substr):
-    """Assign cells an image to the mask they overlap most with
-
+    """ Assign cells an image to the mask they overlap most with
     Args:
         seg_dir (str): path to segmentation directory
         mask_dir (str): path to mask directory, with masks for each FOV in a dedicated folder
@@ -237,7 +235,7 @@ def preprocess_table(adata_table, threshold_list, image_key, seg_label_key, chec
     except ValueError:
         raise ValueError("Ensure all values contained in adata.X are numeric values.")
 
-    # assigne automatic thresholding if none provided
+    # assign automatic thresholding if none provided
     if None in [x[1] for x in threshold_list]:
         threshold_list = automatic_threshold(adata_table, threshold_list)
 

@@ -68,7 +68,7 @@ class SpaceCat:
         return table
 
     def calculate_density_stats(self, total_df_clusters, compartment_area_df):
-        """Function to calculate density statistics based on cell counts and compartment area
+        """ Function to calculate density statistics based on cell counts and compartment area
         Args:
             total_df_clusters (pd.DataFrame): table containing cluster stats
             compartment_area_df (pd.DataFrame): the dataframe containing the areas
@@ -95,7 +95,7 @@ class SpaceCat:
         return density_df
 
     def get_frequencies(self, counts_df, groupby_cols):
-        """Function to calculate frequencies based on count values.
+        """ Function to calculate frequencies based on count values.
         Args:
             counts_df (pd.DataFrame): table containing cell counts data
             groupby_cols (str): list of table columns to groupby
@@ -144,7 +144,7 @@ class SpaceCat:
 
     def long_df_helper(self, table, cluster_col_name, drop_cols, var_name, cluster_stats,
                        normalize, subset_col=None):
-        """Function to summarize input data by cell type.
+        """ Function to summarize input data by cell type.
         Args:
             table (pd.DataFrame): table containing input data
             cluster_col_name (str): name of the column that contains the cluster information
@@ -194,7 +194,7 @@ class SpaceCat:
 
     def create_long_df(self, table, cluster_col_name, result_name, var_name, subset_col=None,
                        cluster_stats=False, normalize=False, drop_cols=None):
-        """Summarize input data by cell type, with the option to subset by an additional feature.
+        """ Summarize input data by cell type, with the option to subset by an additional feature.
         Args:
             table (pd.DataFrame): the dataframe containing information on each cell
             cluster_col_name (str): the column name in cell_table that contains the cluster info
@@ -402,8 +402,9 @@ class SpaceCat:
 
     def calculate_compartment_features(self, compartment_area_df, minimum_prop=0.01):
         """ Calculate per image compartment area and ratio stats.
-        compartment_area_df (pd.DataFrame): the dataframe containing the areas of each compartment
-        minimum_prop (float): minimum proportion required of a compartment for ratio to be computed
+        Args:
+            compartment_area_df (pd.DataFrame): the dataframe containing the areas of each compartment
+            minimum_prop (float): minimum proportion required of a compartment for ratio to be computed
 
         Returns:
             tuple (pd.DataFrame, pd.DataFrame):
@@ -706,13 +707,13 @@ class SpaceCat:
     def generate_region_diversity_features(self, cell_table_clusters, cluster_mapping,
                                            intermediate_cluster_col, broadest_cluster_col):
         """ Wrapper function to generate per cell diversity features.
-            Args:
-                cell_table_clusters (pd.DataFrame): table containing per cell data
-                cluster_mapping (dict): mapping between two cell cluster types, used for proportions
-                intermediate_cluster_col (str): the cluster level second most broad
-                broadest_cluster_col (str): the cluster key which has the least number of cell types
-            Returns:
-                appends region diversity feature dataframes to feature_data_list
+        Args:
+            cell_table_clusters (pd.DataFrame): table containing per cell data
+            cluster_mapping (dict): mapping between two cell cluster types, used for proportions
+            intermediate_cluster_col (str): the cluster level second most broad
+            broadest_cluster_col (str): the cluster key which has the least number of cell types
+        Returns:
+            appends region diversity feature dataframes to feature_data_list
         """
 
         # Diversity of broad cell types using intermediate cell makeup
@@ -1051,7 +1052,7 @@ class SpaceCat:
 
     ## FILTERING FUNCTIONS ##
     def remove_correlated_features(self, correlation_filtering_thresh, image_prop=0.15):
-        """  A function to filter out features that are highly correlated in compartments.
+        """ A function to filter out features that are highly correlated in compartments.
         Args:
             correlation_filtering_thresh (float): the max correlation value the features have to be
                 included the feature table, any features with correlation above it will be excluded
